@@ -56,12 +56,18 @@ class vec3():
 	def __sub__(self, other):
 		return vec3(self.x - other.x, self.y - other.y, self.z - other.z)
 
+	def __len__(self):
+		return len(self.x)
+
 	def dot(self, other):
 		return (self.x * other.x) + (self.y * other.y) + (self.z * other.z)
 
 	def cross(self, other):
 		v = np.cross([self.x, self.y, self.z], [other.x, other.y, other.z], axisa=0, axisb=0, axisc=0)
 		return vec3(v[0], v[1], v[2])
+	
+	def ontoproj(self, other): #projects other vector onto self!
+		return self * (self.dot(other)/(abs(other)**.5))
 
 	def __abs__(self):
 		return self.dot(self)
@@ -85,12 +91,72 @@ class vec3():
 		np.place(r.z, cond, self.z)
 		return r
 
+	def to4d(self, t):
+		return np.array((*self.components(),t*np.ones(len(self))))
+
+	def tobases(self): # returns matrix collection thingy; len x 3 x 3
+		b = self.norm()
+		i = vec3(np.ones(len(self)),np.zeros(len(self)),np.zeros(len(self)))
+		j = vec3(np.zeros(len(self)),np.ones(len(self)),np.zeros(len(self)))
+		ax0 = (self-self.ontoproj(np.where(i.dot(self)<j.dot(self), i, j))).norm()
+		ax1 = b.cross(ax0) # mademadics
+		return np.transpose(np.arr((b.components(),ax0.components(),ax1.components())),(2,0,1))
+		# vec, xyz, loc
+
 	def __str__(self):
 		return "Vec3| x: " + str(self.x) + " y: " + str(self.y) + " z: " + str(self.z)
 
 	def __repr__(self):
 		return "Vec3| x: " + str(self.x) + " y: " + str(self.y) + " z: " + str(self.z)
 
+class velo(vec3): 
+	"""
+	Array of velocities I guess?
+	"""
+	def __init__(self,x,y,z):
+		super().__init__(x,y,z)
+		b, bn = np.sqrt(abs(self)), self.norm()
+		assert(all(abs(b)<1)) #what's the array equiv of this
+		self.g = g = np.sqrt(1-b)
+		c = np.pad(self.tobases(),((0,0),(0,1),(0,1)),'constant',0)
+		c[:,-1,-1]=1
+		lt = np.repeat([np.eye(4)],len(self))
+		lt[:,0,0]=lt[:,-1,-1]=g
+		lt[:,-1,0]=lt[:,0,-1]=-g*b
+		self.lt = c @ lt @ np.inv(c) #4d ofc
+
+	def __neg__(self):
+		return velo(-self.x,-self.y,-self.z)
+
+	#def __add__(self, other:velo):
+	def veloadd(self, other): #other: velo
+		vp = (other.lt @ self.to4d(1).T).T
+		return velo(*vp[:2]/vp[3])
+
+class vec4():
+	def __init__(self,x,y,z,t):
+		self.x = vec3(x,y,z)
+		self.t = t if hasattr(t,"__len__") else np.repeat(t,len(x))
+	
+	def inframe(self,frame):
+		posp = (frame.b.lt @ (self.x-frame.o).to4d(t=self.t).T).T
+		return vec4(*posp)
+
+class frame(): #here's a really cursed thought: that's basically our line-into-time class
+	def __init__(self, origin, beta, t=0): #origin: vec3; beta: velo
+		self.b = beta
+		self.o = origin-t*beta
+
+	def pos(self, t):
+		return self.o + t*self.b
+
+	def __neg__(self):
+		pos = -(np.inv(self.b.lt) @ self.o.to4d(0).T).T
+		return frame(vec3(*pos[:2]),-self.b,t=pos[3]) # i think???
+
+	def inframe(self, frame):
+		posp = vec4(*self.o,0).inframe(frame)
+		return frame(posp.x,frame.b.add(self.b),posp.t)
 
 class Thing:
 	"""
