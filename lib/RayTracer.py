@@ -47,7 +47,7 @@ class vec3:
 	"""
 
 	def __init__(self, x, y, z):
-		(self.x, self.y, self.z) = (x, y, z)
+		(self.x, self.y, self.z) = (x, y, z) if hasattr(x,"__len__") else np.array(([x],[y],[z])) #frick it
 
 	def __mul__(self, other):
 		return vec3(self.x * other, self.y * other, self.z * other)
@@ -69,7 +69,7 @@ class vec3:
 		return vec3(v[0], v[1], v[2])
 	
 	def ontoproj(self, other): #projects other vector onto self!
-		return self * (self.dot(other)/(abs(other)**.5))
+		return self * (self.dot(other)/(abs(self)**.5))
 
 	def __abs__(self):
 		return self.dot(self)
@@ -98,11 +98,15 @@ class vec3:
 
 	def tobases(self): # returns matrix collection thingy; len x 3 x 3
 		b = self.norm()
-		i = vec3(np.ones(len(self)),np.zeros(len(self)),np.zeros(len(self)))
-		j = vec3(np.zeros(len(self)),np.ones(len(self)),np.zeros(len(self)))
-		ax0 = (self-self.ontoproj(np.where(i.dot(self)<j.dot(self), i, j))).norm()
+		i = np.array([[1]*len(self),[0]*len(self),[0]*len(self)])
+		j = np.array([[0]*len(self),[1]*len(self),[0]*len(self)])
+		ij = np.where(abs(vec3(*i).cross(self))>abs(vec3(*j).cross(self)), i.T, j.T).T
+		ax0 = b.cross(vec3(*ij)).norm()
 		ax1 = b.cross(ax0) # mademadics
-		return np.transpose(np.arr((b.components(),ax0.components(),ax1.components())),(2,0,1))
+		#print(b,ax0,ax1)
+		assert(not any([b.dot(ax0),b.dot(ax1),ax0.dot(ax1)]))
+		#print(np.transpose(np.array((b.components(),ax0.components(),ax1.components())),(2,0,1)))
+		return np.transpose(np.array((b.components(),ax0.components(),ax1.components())),(2,0,1))
 		# vec, xyz, loc
 
 	def __str__(self):
@@ -119,13 +123,19 @@ class velo(vec3):
 		super().__init__(x,y,z)
 		b, bn = np.sqrt(abs(self)), self.norm()
 		assert(all(abs(b)<1)) #what's the array equiv of this
-		self.g = g = np.sqrt(1-b)
-		c = np.pad(self.tobases(),((0,0),(0,1),(0,1)),'constant',0)
-		c[:,-1,-1]=1
-		lt = np.repeat([np.eye(4)],len(self))
-		lt[:,0,0]=lt[:,-1,-1]=g
-		lt[:,-1,0]=lt[:,0,-1]=-g*b
-		self.lt = c @ lt @ np.inv(c) #4d ofc
+		self.g = g = np.reciprocal(np.sqrt(1-np.square(b)))
+		if (abs(b)==0): self.lt = np.eye(4)
+		else:
+			c = np.pad(self.tobases(),((0,0),(0,1),(0,1)),'constant',constant_values=0)
+			c[:,-1,-1]=1
+			lt = np.array([np.eye(4)]*len(self))
+			lt[:,0,0]=lt[:,-1,-1]=g
+			lt[:,-1,0]=lt[:,0,-1]=-g*b
+			#print(c)
+			#print(lt)
+			#print(np.linalg.det(lt))
+			#print(np.linalg.inv(c))
+			self.lt = c @ lt @ np.linalg.inv(c) #4d ofc
 
 	def __neg__(self):
 		return velo(-self.x,-self.y,-self.z)
@@ -137,28 +147,40 @@ class velo(vec3):
 
 class vec4():
 	def __init__(self,x,y,z,t):
-		self.x = vec3(x,y,z)
-		self.t = t if hasattr(t,"__len__") else np.repeat(t,len(x))
+		self.pos = vec3(x,y,z)
+		self.t = t if hasattr(t,"__len__") else np.array([t]*len(self.pos))
 	
 	def inframe(self,frame):
-		posp = (frame.b.lt @ (self.x-frame.o).to4d(t=self.t).T).T
-		return vec4(*posp)
+		#print(frame.b.lt.shape,(self.pos-frame.o).to4d(t=self.t).T[:,:,np.newaxis].shape)
+		posp = (frame.b.lt @ (self.pos-frame.o).to4d(t=self.t).T[:,:,np.newaxis]) #i hate numpy i hate numpy i hate numpy
+		#print("posp: ",posp.shape)
+		return vec4(*np.squeeze(posp,axis=2).T)
+
+	def __str__(self):
+		return "Vec4| x: " + str(self.pos.x) + " y: " + str(self.pos.y) + " z: " + str(self.pos.z) + " t: " + str(self.t)
 
 class frame(): #here's a really cursed thought: that's basically our line-into-time class
-	def __init__(self, origin, beta, t=0): #origin: vec3; beta: velo
+	def __init__(self, origin, beta, t=0): #origin: vec3; beta: velo, all relative to one "absolute" frame. it's ok it's negatable
 		self.b = beta
-		self.o = origin-t*beta
+		self.o = origin-beta*t
 
 	def pos(self, t):
 		return self.o + t*self.b
 
 	def __neg__(self):
-		pos = -(np.inv(self.b.lt) @ self.o.to4d(0).T).T
+		pos = -(np.linalg.inv(self.b.lt) @ self.o.to4d(0).T).T
 		return frame(vec3(*pos[:2]),-self.b,t=pos[3]) # i think???
 
 	def inframe(self, frame):
 		posp = vec4(*self.o,0).inframe(frame)
-		return frame(posp.x,frame.b.add(self.b),posp.t)
+		return frame(posp.pos,frame.b.add(self.b),posp.t)
+
+# testing
+print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,0))))
+print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(.8,0,0))))
+print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,.8,0))))
+print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,.8))))
+
 
 rgb = vec3  # rgb color just vec3 from 0 to 1 for each rgb
 
