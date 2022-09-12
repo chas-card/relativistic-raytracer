@@ -188,7 +188,7 @@ print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,.8))))
 rgb = vec3  # rgb color just vec3 from 0 to 1 for each rgb
 
 # CONSTANTS ===============================================
-L = vec3(5, 5, -10)  # light position
+L = vec3(300, 1000, -300)  # light position
 E = vec3(0, 0.35, -1)  # Eye position
 FARAWAY = 1.0e+39  # A large distance
 
@@ -294,7 +294,7 @@ class Sphere(Thing):
 		color += self.diffusecolor(M) * lv * seelight
 
 		# Reflection
-		if bounce < 2:
+		if bounce < 1:
 			rayD = (D - N * 2 * D.dot(N)).norm()
 			color += raytrace(nudged, rayD, scene, bounce + 1) * self.mirror
 
@@ -424,7 +424,7 @@ class Triangle(Thing):
 		color += self.diffusecolor(M) * lv * seelight
 
 		# Reflection
-		if bounce < 2:
+		if bounce < 1:
 			rayD = (D - N * 2 * D.dot(N)).norm()
 			color += raytrace(nudged, rayD, scene, bounce + 1) * self.mirror
 
@@ -447,7 +447,7 @@ class Mesh:
 
 	"""
 
-	def __init__(self, pos, r_mat, m: mesh, diffuse, mirror=0.5):
+	def __init__(self, pos, r_mat, m_o: mesh, diffuse, mirror=0.5):
 		"""
 
 		:param pos: vec3 new position to translate mesh to
@@ -458,8 +458,10 @@ class Mesh:
 		"""
 
 		self.type = 2
+		# copy mesh before applying translation/rotation
+		m = mesh.Mesh(m_o.data.copy())
 
-		# m.rotate_using_matrix(r_mat)
+		m.rotate_using_matrix(r_mat)
 		m.translate(np.array([pos.x, pos.y, pos.z]))
 
 		self.tArray = []
