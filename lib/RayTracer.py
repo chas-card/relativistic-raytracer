@@ -104,7 +104,7 @@ class vec3:
 		ax0 = b.cross(vec3(*ij)).norm()
 		ax1 = b.cross(ax0) # mademadics
 		#print(b,ax0,ax1)
-		assert(not any([b.dot(ax0),b.dot(ax1),ax0.dot(ax1)]))
+		assert(np.max(np.abs([b.dot(ax0),b.dot(ax1),ax0.dot(ax1)]))<1e-8)
 		#print(np.transpose(np.array((b.components(),ax0.components(),ax1.components())),(2,0,1)))
 		return np.transpose(np.array((b.components(),ax0.components(),ax1.components())),(2,0,1))
 		# vec, xyz, loc
@@ -131,19 +131,23 @@ class velo(vec3):
 			lt = np.array([np.eye(4)]*len(self))
 			lt[:,0,0]=lt[:,-1,-1]=g
 			lt[:,-1,0]=lt[:,0,-1]=-g*b
-			#print(c)
-			#print(lt)
-			#print(np.linalg.det(lt))
 			#print(np.linalg.inv(c))
-			self.lt = c @ lt @ np.linalg.inv(c) #4d ofc
+			#print(lt)
+			#print(c)
+			self.lt = np.linalg.inv(c) @ lt @ c #4d ofc
 
 	def __neg__(self):
 		return velo(-self.x,-self.y,-self.z)
 
 	#def __add__(self, other:velo):
 	def veloadd(self, other): #other: velo
-		vp = (other.lt @ self.to4d(1).T).T
-		return velo(*vp[:2]/vp[3])
+		vp = np.squeeze(self.lt @ other.to4d(1).T[:,:,np.newaxis], axis=2).T
+		return velo(*vp[:3]/vp[3])
+	
+	def lightinto(self, other): #other: vec3 normalised
+		vp = np.squeeze(self.lt @ other.to4d(1).T[:,:,np.newaxis], axis=2).T
+		return velo(*vp[:3]/vp[3])
+
 
 class vec4():
 	def __init__(self,x,y,z,t):
@@ -159,28 +163,37 @@ class vec4():
 	def __str__(self):
 		return "Vec4| x: " + str(self.pos.x) + " y: " + str(self.pos.y) + " z: " + str(self.pos.z) + " t: " + str(self.t)
 
-class frame(): #here's a really cursed thought: that's basically our line-into-time class
-	def __init__(self, origin, beta, t=0): #origin: vec3; beta: velo, all relative to one "absolute" frame. it's ok it's negatable
+class frame(): #ehh frick it. **do not expect 'intercept time' to be consistent. expect nothing of "absolute time".**
+	def __init__(self, intercept, beta, t=0): #the absolute times will be completely wrong but the *differences* in times should be good??
 		self.b = beta
-		self.o = origin-beta*t
+		self.o = intercept-beta*t
 
 	def pos(self, t):
 		return self.o + t*self.b
 
-	def __neg__(self):
-		pos = -(np.linalg.inv(self.b.lt) @ self.o.to4d(0).T).T
-		return frame(vec3(*pos[:2]),-self.b,t=pos[3]) # i think???
+	def __neg__(self): #in short: this screws incredibly with the "origin time" lol.
+		pos = -np.squeeze((np.linalg.inv(self.b.lt) @ self.o.to4d(0).T[:,:,np.newaxis]),axis=2).T
+		return frame(vec3(*pos[:3]),-self.b)#,t=pos[3]) # i think???
 
-	def inframe(self, frame):
-		posp = vec4(*self.o,0).inframe(frame)
-		return frame(posp.pos,frame.b.add(self.b),posp.t)
+	def inframe(self, f):
+		posp = vec4(self.o.x, self.o.y, self.o.z, 0).inframe(f)
+		return frame(posp.pos, f.b.veloadd(self.b), posp.t)
+
+	def __str__(self):
+		return "Frame| [ Origin: " + str(self.o) + " ], [ Velo: " + str(self.b) + " ]" 
 
 # testing
 print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,0))))
 print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(.8,0,0))))
 print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,.8,0))))
-print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,.8))))
-
+print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(.8,0,0))))
+print(vec4(-1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,.8))))
+print(vec4(1*.5**.5,1*.5**.5,0,0).inframe(frame(vec3(0,0,0),velo(.8*.5**.5,.8*.5**.5,0))))
+print(vec4(1*.5**.5,-1*.5**.5,0,0).inframe(frame(vec3(0,0,0),velo(.8*.5**.5,.8*.5**.5,0))))
+#print(--frame(vec3(0,1,0),velo(.6,0,0)))
+#print(frame(vec3(1,0,0),velo(.6,0,0)))
+#print(-frame(vec3(1,0,0),velo(.6,0,0)))
+print(--frame(vec3(1,4,0),velo(.6,.6,0)))
 
 rgb = vec3  # rgb color just vec3 from 0 to 1 for each rgb
 
@@ -204,6 +217,7 @@ class Thing:
 	pos : vec3		vec3 position
 	diffuse : vec3	rgb vec3 colour
 	mirror : float	How much to reflect
+	frame : frame		frame I guess lol
 
 	Methods
 	-------
@@ -215,7 +229,7 @@ class Thing:
 
 	"""
 
-	def __init__(self, type, pos, diffuse, mirror=0.5):
+	def __init__(self, type, pos, diffuse, mirror=0.5, beta=velo(0,0,0)):
 		"""
 		type: int
 			Type of object, type constants defined in RayTracer.py
@@ -225,11 +239,14 @@ class Thing:
 			diffuse color in rgb
 		mirror: float, optional
 			how much to reflect
+		beta: velo
+			velocity
 		"""
 		self.type = type
 		self.pos = pos
 		self.diffuse = diffuse
 		self.mirror = mirror
+		self.frame = frame(pos,beta)
 
 	def diffusecolor(self, M):
 		return self.diffuse
@@ -255,11 +272,11 @@ class Sphere(Thing):
 
 	"""
 
-	def __init__(self, center, r, diffuse, mirror=0.5):
-		Thing.__init__(self, 0, center, diffuse, mirror)
+	def __init__(self, center, r, diffuse, mirror=0.5, beta=velo(0,0,0)):
+		Thing.__init__(self, 0, center, diffuse, mirror, beta)
 		self.r = r
 
-	def intersect(self, O, D):
+	def intersect(self, O, D): #in the thing's own frame, pls
 		b = 2 * D.dot(O - self.pos)
 		c = abs(self.pos) + abs(O) - 2 * self.pos.dot(O) - (self.r * self.r)
 		disc = (b ** 2) - (4 * c)
@@ -271,6 +288,7 @@ class Sphere(Thing):
 		return np.where(pred, h, FARAWAY)
 
 	def light(self, O, D, d, scene, bounce):
+		Oo, Do = O.to_frame()
 		M = (O + D * d)  # intersection point
 		N = (M - self.pos) * (1. / self.r)  # normal (numpy array)
 		toL = (L - M).norm()  # direction to light
@@ -341,7 +359,7 @@ class Triangle(Thing):
 
 	"""
 
-	def __init__(self, v1, v2, v3, N, diffuse, mirror=0.5):
+	def __init__(self, v1, v2, v3, N, diffuse, mirror=0.5, beta=velo(0,0,0)):
 		"""
 
 		:param v1: vec3 vertex 1
@@ -351,7 +369,7 @@ class Triangle(Thing):
 		:param diffuse: vec3 rgb colour
 		:param mirror: How much to reflect
 		"""
-		Thing.__init__(self, 1, v1, diffuse, mirror)
+		Thing.__init__(self, 1, v1, diffuse, mirror, beta)
 		self.v2 = v2
 		self.v3 = v3
 
@@ -430,7 +448,6 @@ class Triangle(Thing):
 		color += rgb(1, 1, 1) * np.power(np.clip(phong, 0, 1), 50) * seelight
 		return color
 
-
 class Mesh:
 	"""
 	Mesh of many Triangle objects (doesn't actually store Triangle objects)
@@ -444,7 +461,7 @@ class Mesh:
 
 	"""
 
-	def __init__(self, pos, r_mat, m: mesh, diffuse, mirror=0.5):
+	def __init__(self, pos, r_mat, m: mesh, diffuse, mirror=0.5, beta=velo(0,0,0)):
 		"""
 
 		:param pos: vec3 new position to translate mesh to
@@ -467,10 +484,9 @@ class Mesh:
 						 vec3(m.v1[i][0], m.v1[i][1], m.v1[i][2]),
 						 vec3(m.v2[i][0], m.v2[i][1], m.v2[i][2]),
 						 vec3(meshN[i][0], meshN[i][1], meshN[i][2]),
-						 diffuse, mirror)
+						 diffuse, mirror, beta)
 			)
 		print("Created mesh.")
-
 
 # O         ray origin
 # D         normalized ray direction
