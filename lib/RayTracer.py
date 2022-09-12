@@ -96,7 +96,7 @@ class vec3:
 		np.place(r.z, cond, self.z)
 		return r
 
-	def to4d(self, t):
+	def to4d(self, t=0):
 		return np.array((*self.components(),t*np.ones(len(self))))
 
 	def tobases(self): # returns matrix collection thingy; len x 3 x 3
@@ -125,7 +125,7 @@ class velo(vec3):
 	def __init__(self,x,y,z):
 		super().__init__(x,y,z)
 		b, bn = np.sqrt(abs(self)), self.norm()
-		assert(all(abs(b)<1)) #what's the array equiv of this
+		assert(all(abs(b)<=1)) #what's the array equiv of this
 		self.g = g = np.reciprocal(np.sqrt(1-np.square(b)))
 		if (abs(b)==0): self.lt = np.eye(4)
 		else:
@@ -142,14 +142,9 @@ class velo(vec3):
 	def __neg__(self):
 		return velo(-self.x,-self.y,-self.z)
 
-	#def __add__(self, other:velo):
-	def veloadd(self, other): #other: velo
+	def veloadd(self, other): #other: vec3
 		vp = np.squeeze(self.lt @ other.to4d(1).T[:,:,np.newaxis], axis=2).T
-		return velo(*vp[:3]/vp[3])
-	
-	def lightinto(self, other): #other: vec3 normalised
-		vp = np.squeeze(self.lt @ other.to4d(1).T[:,:,np.newaxis], axis=2).T
-		return velo(*vp[:3]/vp[3])
+		return (velo(*vp[:3]/vp[3]) if hasattr(other,"lt") else vec3(*vp[:3]/vp[3])) #account for speed of light idw sep fn
 
 
 class vec4():
@@ -171,8 +166,8 @@ class frame(): #ehh frick it. **do not expect 'intercept time' to be consistent.
 		self.b = beta
 		self.o = intercept-beta*t
 
-	def pos(self, t):
-		return self.o + t*self.b
+	#def pos(self, t):
+		#return self.o + t*self.b
 
 	def __neg__(self): #in short: this screws incredibly with the "origin time" lol.
 		pos = -np.squeeze((np.linalg.inv(self.b.lt) @ self.o.to4d(0).T[:,:,np.newaxis]),axis=2).T
@@ -193,10 +188,9 @@ print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(.8,0,0))))
 print(vec4(-1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,.8))))
 print(vec4(1*.5**.5,1*.5**.5,0,0).inframe(frame(vec3(0,0,0),velo(.8*.5**.5,.8*.5**.5,0))))
 print(vec4(1*.5**.5,-1*.5**.5,0,0).inframe(frame(vec3(0,0,0),velo(.8*.5**.5,.8*.5**.5,0))))
-#print(--frame(vec3(0,1,0),velo(.6,0,0)))
-#print(frame(vec3(1,0,0),velo(.6,0,0)))
-#print(-frame(vec3(1,0,0),velo(.6,0,0)))
+print(frame(vec3(1,0,0),velo(.6,0,0)))
 print(--frame(vec3(1,4,0),velo(.6,.6,0)))
+print(velo(.6,0,0).veloadd(vec3(0,1,0)))
 
 rgb = vec3  # rgb color just vec3 from 0 to 1 for each rgb
 
@@ -279,9 +273,10 @@ class Sphere(Thing):
 		Thing.__init__(self, 0, center, diffuse, mirror, beta)
 		self.r = r
 
-	def intersect(self, O, D): #in the thing's own frame, pls
-		b = 2 * D.dot(O - self.pos)
-		c = abs(self.pos) + abs(O) - 2 * self.pos.dot(O) - (self.r * self.r)
+	def intersect(self, O, D, rel=False): #in the thing's own frame, pls
+		if not rel: O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
+		b = 2 * D.dot(O)# - self.pos)
+		c = abs(O) - self.r * self.r #abs(self.pos) + abs(O) - 2 * self.pos.dot(O) - (self.r * self.r)
 		disc = (b ** 2) - (4 * c)
 		sq = np.sqrt(np.maximum(0, disc))
 		h0 = (-b - sq) / 2
@@ -291,7 +286,9 @@ class Sphere(Thing):
 		return np.where(pred, h, FARAWAY)
 
 	def light(self, O, D, d, scene, bounce):
-		Oo, Do = O.to_frame()
+		print(self.frame)
+		O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
+
 		M = (O + D * d)  # intersection point
 		N = (M - self.pos) * (1. / self.r)  # normal (numpy array)
 		toL = (L - M).norm()  # direction to light
@@ -300,7 +297,7 @@ class Sphere(Thing):
 
 		# Shadow: find if the point is shadowed or not.
 		# This amounts to finding out if M can see the light
-		light_distances = [s.intersect(nudged, toL) for s in scene]
+		light_distances = [s.intersect(nudged, toL, rel=True) for s in scene]
 		light_nearest = reduce(np.minimum, light_distances)
 		seelight = light_distances[scene.index(self)] == light_nearest
 
@@ -314,7 +311,7 @@ class Sphere(Thing):
 		# Reflection
 		if bounce < 2:
 			rayD = (D - N * 2 * D.dot(N)).norm()
-			color += raytrace(nudged, rayD, scene, bounce + 1) * self.mirror
+			color += raytrace(self.pos+nudged, (-self.frame.b).veloadd(rayD), scene, bounce + 1) * self.mirror
 
 		# Blinn-Phong shading (specular)
 		phong = N.dot((toL + toO).norm())
