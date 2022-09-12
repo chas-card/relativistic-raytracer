@@ -142,7 +142,7 @@ class velo(vec3):
 	def __neg__(self):
 		return velo(-self.x,-self.y,-self.z)
 
-	def veloadd(self, other): #other: vec3
+	def inframe(self, other): #other: vec3 or velo?
 		vp = np.squeeze(self.lt @ other.to4d(1).T[:,:,np.newaxis], axis=2).T
 		return (velo(*vp[:3]/vp[3]) if hasattr(other,"lt") else vec3(*vp[:3]/vp[3])) #account for speed of light idw sep fn
 
@@ -152,45 +152,24 @@ class vec4():
 		self.pos = vec3(x,y,z)
 		self.t = t if hasattr(t,"__len__") else np.array([t]*len(self.pos))
 
-	def inframe(self,frame):
+	def inframe(self,v):
 		#print(frame.b.lt.shape,(self.pos-frame.o).to4d(t=self.t).T[:,:,np.newaxis].shape)
-		posp = (frame.b.lt @ (self.pos-frame.o).to4d(t=self.t).T[:,:,np.newaxis]) #i hate numpy i hate numpy i hate numpy
+		posp = (v.lt @ self.pos.to4d(t=self.t).T[:,:,np.newaxis]) #i hate numpy i hate numpy i hate numpy
 		#print("posp: ",posp.shape)
 		return vec4(*np.squeeze(posp,axis=2).T)
 
 	def __str__(self):
 		return "Vec4| x: " + str(self.pos.x) + " y: " + str(self.pos.y) + " z: " + str(self.pos.z) + " t: " + str(self.t)
 
-class frame(): #ehh frick it. **do not expect 'intercept time' to be consistent. expect nothing of "absolute time".**
-	def __init__(self, intercept, beta, t=0): #the absolute times will be completely wrong but the *differences* in times should be good??
-		self.b = beta
-		self.o = intercept-beta*t
-
-	#def pos(self, t):
-		#return self.o + t*self.b
-
-	def __neg__(self): #in short: this screws incredibly with the "origin time" lol.
-		pos = -np.squeeze((np.linalg.inv(self.b.lt) @ self.o.to4d(0).T[:,:,np.newaxis]),axis=2).T
-		return frame(vec3(*pos[:3]),-self.b)#,t=pos[3]) # i think???
-
-	def inframe(self, f):
-		posp = vec4(self.o.x, self.o.y, self.o.z, 0).inframe(f)
-		return frame(posp.pos, f.b.veloadd(self.b), posp.t)
-
-	def __str__(self):
-		return "Frame| [ Origin: " + str(self.o) + " ], [ Velo: " + str(self.b) + " ]"
-
 # testing
-print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,0))))
-print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(.8,0,0))))
-print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,.8,0))))
-print(vec4(1,0,0,0).inframe(frame(vec3(0,0,0),velo(.8,0,0))))
-print(vec4(-1,0,0,0).inframe(frame(vec3(0,0,0),velo(0,0,.8))))
-print(vec4(1*.5**.5,1*.5**.5,0,0).inframe(frame(vec3(0,0,0),velo(.8*.5**.5,.8*.5**.5,0))))
-print(vec4(1*.5**.5,-1*.5**.5,0,0).inframe(frame(vec3(0,0,0),velo(.8*.5**.5,.8*.5**.5,0))))
-print(frame(vec3(1,0,0),velo(.6,0,0)))
-print(--frame(vec3(1,4,0),velo(.6,.6,0)))
-print(velo(.6,0,0).veloadd(vec3(0,1,0)))
+print(vec4(1,0,0,0).inframe(velo(0,0,0)))
+print(vec4(1,0,0,0).inframe(velo(.8,0,0)))
+print(vec4(1,0,0,0).inframe(velo(0,.8,0)))
+print(vec4(1,0,0,0).inframe(velo(.8,0,0)))
+print(vec4(-1,0,0,0).inframe(velo(0,0,.8)))
+print(vec4(1*.5**.5,1*.5**.5,0,0).inframe(velo(.8*.5**.5,.8*.5**.5,0)))
+print(vec4(1*.5**.5,-1*.5**.5,0,0).inframe(velo(.8*.5**.5,.8*.5**.5,0)))
+print(velo(.6,0,0).inframe(vec3(0,1,0)))
 
 rgb = vec3  # rgb color just vec3 from 0 to 1 for each rgb
 
@@ -243,7 +222,7 @@ class Thing:
 		self.pos = pos
 		self.diffuse = diffuse
 		self.mirror = mirror
-		self.frame = frame(pos,beta)
+		self.velo = beta
 
 	def diffusecolor(self, M):
 		return self.diffuse
@@ -274,9 +253,8 @@ class Sphere(Thing):
 		self.r = r
 
 	def intersect(self, O, D, rel=False): #in the thing's own frame, pls
-		if not rel: O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
-		b = 2 * D.dot(O)# - self.pos)
-		c = abs(O) - self.r * self.r #abs(self.pos) + abs(O) - 2 * self.pos.dot(O) - (self.r * self.r)
+		b = 2 * D.dot(O - self.pos)
+		c = abs(self.pos) + abs(O) - 2 * self.pos.dot(O) - (self.r * self.r)
 		disc = (b ** 2) - (4 * c)
 		sq = np.sqrt(np.maximum(0, disc))
 		h0 = (-b - sq) / 2
@@ -286,8 +264,6 @@ class Sphere(Thing):
 		return np.where(pred, h, FARAWAY)
 
 	def light(self, O, D, d, scene, bounce):
-		print(self.frame)
-		O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
 
 		M = (O + D * d)  # intersection point
 		N = (M - self.pos) * (1. / self.r)  # normal (numpy array)
@@ -311,7 +287,7 @@ class Sphere(Thing):
 		# Reflection
 		if bounce < 1:
 			rayD = (D - N * 2 * D.dot(N)).norm()
-			color += raytrace(self.pos+nudged, (-self.frame.b).veloadd(rayD), scene, bounce + 1) * self.mirror
+			color += raytrace(self.pos+nudged, (-self.velo).inframe(rayD), scene, bounce + 1) * self.mirror
 
 		# Blinn-Phong shading (specular)
 		phong = N.dot((toL + toO).norm())
