@@ -248,7 +248,7 @@ class Thing:
 	def diffusecolor(self, M):
 		return self.diffuse
 
-	def intersect(self, O, D):
+	def intersect(self, O, D, rel = False):
 		return FARAWAY
 
 	def light(self, O, D, d, scene, bounce):
@@ -382,9 +382,7 @@ class Triangle(Thing):
 		else:
 			self.N = N
 
-	def intersect(self, O, D):
-		#TODO I think handling of rays coming from "behind triangle" is bad
-
+	def intersect(self, O, D, rel=False):
 		# first, compute intersect lengths to plane
 		denom = D.dot(self.N)
 
@@ -461,7 +459,7 @@ class Mesh:
 
 	"""
 
-	def __init__(self, pos, r_mat, m: mesh, diffuse, mirror=0.5, beta=velo(0,0,0)):
+	def __init__(self, pos, r_mat, m_o: mesh, diffuse, mirror=0.5, beta=velo(0,0,0)):
 		"""
 
 		:param pos: vec3 new position to translate mesh to
