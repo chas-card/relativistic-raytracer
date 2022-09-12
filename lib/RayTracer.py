@@ -152,7 +152,12 @@ class vec4():
 		self.pos = vec3(x,y,z)
 		self.t = t if hasattr(t,"__len__") else np.array([t]*len(self.pos))
 
-	def inframe(self,v):
+	def __add__(self, other):
+		res = vec4(0, 0, 0, self.t + other.t)
+		res.pos = self.pos + other.pos
+		return res
+
+	def inframe(self,frame):
 		#print(frame.b.lt.shape,(self.pos-frame.o).to4d(t=self.t).T[:,:,np.newaxis].shape)
 		posp = (v.lt @ self.pos.to4d(t=self.t).T[:,:,np.newaxis]) #i hate numpy i hate numpy i hate numpy
 		#print("posp: ",posp.shape)
@@ -160,6 +165,25 @@ class vec4():
 
 	def __str__(self):
 		return "Vec4| x: " + str(self.pos.x) + " y: " + str(self.pos.y) + " z: " + str(self.pos.z) + " t: " + str(self.t)
+
+class frame(): #ehh frick it. **do not expect 'intercept time' to be consistent. expect nothing of "absolute time".**
+	def __init__(self, intercept, beta, t=0): #the absolute times will be completely wrong but the *differences* in times should be good??
+		self.b = beta
+		self.o = intercept-beta*t
+
+	#def pos(self, t):
+		#return self.o + t*self.b
+
+	def __neg__(self): #in short: this screws incredibly with the "origin time" lol.
+		pos = -np.squeeze((np.linalg.inv(self.b.lt) @ self.o.to4d(0).T[:,:,np.newaxis]),axis=2).T
+		return frame(vec3(*pos[:3]),-self.b)#,t=pos[3]) # i think???
+
+	def inframe(self, f):
+		posp = vec4(self.o.x, self.o.y, self.o.z, 0).inframe(f)
+		return frame(posp.pos, f.b.veloadd(self.b), posp.t)
+
+	def __str__(self):
+		return "Frame| [ Origin: " + str(self.o) + " ], [ Velo: " + str(self.b) + " ]"
 
 # testing
 print(vec4(1,0,0,0).inframe(velo(0,0,0)))
@@ -264,6 +288,8 @@ class Sphere(Thing):
 		return np.where(pred, h, FARAWAY)
 
 	def light(self, O, D, d, scene, bounce):
+		print(self.frame)
+		O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
 
 		M = (O + D * d)  # intersection point
 		N = (M - self.pos) * (1. / self.r)  # normal (numpy array)
