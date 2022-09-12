@@ -61,7 +61,7 @@ class Frame:
 # TODO: make screen class work for arbitratily defined screen coords
 class Screen:
     def __init__(self, res, time, frame):
-        self.point = np.array((0, 0.35, -1, time), dtype=np_type)
+        self.point = np.array((time*c, 0, 0.35, -1), dtype=np_type)
         self.frame = frame
 
         w, h = (640, 480)
@@ -71,7 +71,9 @@ class Screen:
         x = np.tile(np.linspace(S[0], S[2], w), h)
         y = np.repeat(np.linspace(S[1], S[3], h), w)
 
-        self.screen_coords = np.stack((x, y, np.zeros(x.shape[0]), np.zeros(x.shape[0])), axis=1)
+        # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
+        #  are all the same time?
+        self.screen_coords = np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=1)
         self.ray_dirs = self.screen_coords - self.point
 
     # get the "eye" point in any other frame
@@ -90,8 +92,7 @@ class Screen:
         coords = self.get_screen_coords_in_frame(toframe)
         pt = self.get_point_in_frame(toframe)
         dirs = coords - pt
-        dirs[:, 3] = pt[3]
-        return dirs
+        return dirs[1:]
 
 
 class Object:
@@ -110,10 +111,23 @@ class SphereObject(Object):
 
     def intersect_frame(self, source, direction, screen):
         # TODO: add inverse transform from this back to screen frame (i brain die)
-        return self.intersect(screen.get_point_in_frame(), screen.get_ray_dirs_in_frame())
+        pt = screen.get_point_in_frame()
+        time = pt[0]
+        pos = pt[1:]
 
-    def intersect(self, source, direction):
-        pass
+        # add inv transform here before return pls
+        return self.intersect(pos, screen.get_ray_dirs_in_frame())
+
+    def intersect(self, source, direction): # this is refactored and likely broken btw just check
+        b = 2 * np.dot(direction, source - self.position)
+        c = np.abs(self.position) + np.abs(source) - 2 * np.dot(self.position, source) - (self.radius ** 2)
+        disc = (b ** 2) - (4 * c)
+        sq = np.sqrt(np.maximum(0, disc))
+        h0 = (-b - sq) / 2
+        h1 = (-b + sq) / 2
+        h = np.where((h0 > 0) & (h0 < h1), h0, h1)
+        pred = (disc > 0) & (h > 0)
+        return np.where(pred, h, FARAWAY)
 
 
 class MeshObject(Object):
@@ -126,4 +140,5 @@ class MeshObject(Object):
         return self.intersect(screen.get_point_in_frame(), screen.get_ray_dirs_in_frame())
 
     def intersect(self, source, direction):
+        # TODO: @chas-card pls port over code
         pass
