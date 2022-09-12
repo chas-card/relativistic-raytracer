@@ -82,9 +82,12 @@ class vec3:
 		return self.x, self.y, self.z
 
 	def extract(self, cond):
-		return vec3(extract(cond, self.x),
-					extract(cond, self.y),
-					extract(cond, self.z))
+		if len(self.x) == 1:
+			return vec3(self.x, self.y, self.z)
+		else:
+			return vec3(extract(cond, self.x),
+						extract(cond, self.y),
+						extract(cond, self.z))
 
 	def place(self, cond):
 		r = vec3(np.zeros(cond.shape), np.zeros(cond.shape), np.zeros(cond.shape))
