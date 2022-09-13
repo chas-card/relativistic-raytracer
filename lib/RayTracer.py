@@ -159,7 +159,7 @@ class vec4():
 
 	def inframe(self,frame):
 		#print(frame.b.lt.shape,(self.pos-frame.o).to4d(t=self.t).T[:,:,np.newaxis].shape)
-		posp = (v.lt @ self.pos.to4d(t=self.t).T[:,:,np.newaxis]) #i hate numpy i hate numpy i hate numpy
+		posp = (frame.lt @ self.pos.to4d(t=self.t).T[:,:,np.newaxis]) #i hate numpy i hate numpy i hate numpy
 		#print("posp: ",posp.shape)
 		return vec4(*np.squeeze(posp,axis=2).T)
 
@@ -277,19 +277,24 @@ class Sphere(Thing):
 		self.r = r
 
 	def intersect(self, O, D, rel=False): #in the thing's own frame, pls
+		print(D.x[0],D.y[0],D.z[0])
+		print(O,self.pos)
 		b = 2 * D.dot(O - self.pos)
+		print(np.shape(b))
 		c = abs(self.pos) + abs(O) - 2 * self.pos.dot(O) - (self.r * self.r)
 		disc = (b ** 2) - (4 * c)
 		sq = np.sqrt(np.maximum(0, disc))
 		h0 = (-b - sq) / 2
 		h1 = (-b + sq) / 2
+		print(b[0],c[0],h0[0],h1[0])
 		h = np.where((h0 > 0) & (h0 < h1), h0, h1)
 		pred = (disc > 0) & (h > 0)
+		print(np.sum(pred))
 		return np.where(pred, h, FARAWAY)
 
 	def light(self, O, D, d, scene, bounce):
-		print(self.frame)
-		O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
+		#print(self.frame)
+		#O, D = vec4(O.x,O.y,O.z,0).inframe(self.frame).pos, self.frame.b.veloadd(vec3(D.x,D.y,D.z))
 
 		M = (O + D * d)  # intersection point
 		N = (M - self.pos) * (1. / self.r)  # normal (numpy array)
