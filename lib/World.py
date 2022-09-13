@@ -1,6 +1,6 @@
 import numpy as np
 
-np_type = np.float64
+np_type = np.float32
 c = 3e8
 
 FARAWAY = 1.0e+39  # A large distance
@@ -32,7 +32,7 @@ class Frame:
         lt_mat[0, 1:] = lt_mat[1:, 0] = -b * g
         lt_mat[1:, 1:] += (g - 1) * np.matmul(b[np.newaxis].T, b[np.newaxis]) / b2
 
-        assert(abs(np.linalg.det(lt_mat)-1)<1e-12)
+        assert(abs(np.linalg.det(lt_mat)-1)<1e-4)
         return lt_mat
 
     @property
@@ -115,7 +115,7 @@ class Object:
         """
         self.position = np.array(position, dtype=np_type)
         self.frame = frame
-        self.diffuse = np.array(diffuse)
+        self.diffuse = np.array(diffuse, dtype=np_type)
         self.mirror = mirror
 
     def intersect_frame(self, screen):
@@ -187,12 +187,12 @@ class SphereObject(Object):
 
 
 class MeshObject(Object):
-    def __init__(self, position, frame, mesh):
-        super().__init__(position, frame)
+    def __init__(self, position, frame, mesh, diffuse, mirror=0.5):
+        super().__init__(position, frame, diffuse, mirror=mirror)
         self.m = mesh
 
     def np_intersect(self, source, direction):
-        m = self.mesh
+        m = self.m
         meshN = m.get_unit_normals()
 
         # array of intersect lengths for ALL triangles
@@ -205,33 +205,40 @@ class MeshObject(Object):
 
         P = source + np.einsum("ab,cb->cba", direction, t)
 
-        edge = m.v1 - m.v0
+        edge = (m.v1 - m.v0)[:, np.newaxis, :]
         vp = P - m.v0[:, np.newaxis, :]
-        C = np.cross(edge[:, np.newaxis, :], vp)
+        print("sus")
+        C = np.cross(edge, vp)
+        print("sy")
+        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
+        print("amo")
+
+        edge = (m.v2 - m.v1)[:, np.newaxis, :]
+        print("ng")
+        vp = P - m.v1[:, np.newaxis, :]
+        C = np.cross(edge, vp)
         t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
 
-        edge = m.v2 - m.v1
-        vp = P - m.v0[:, np.newaxis, :]
-        C = np.cross(edge[:, np.newaxis, :], vp)
+        edge = (m.v0 - m.v2)[:, np.newaxis, :]
+        vp = P - m.v2[:, np.newaxis, :]
+        C = np.cross(edge, vp)
         t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
 
-        edge = m.v0 - m.v2
-        vp = P - m.v0[:, np.newaxis, :]
-        C = np.cross(edge[:, np.newaxis, :], vp)
-        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
-
-        t_overall = np.where(t < t_overall, t, t_overall)
+        min_t = np.min(t, axis=0)
+        t_overall = np.where(min_t < t_overall, min_t, t_overall)
 
         return t_overall
 
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS
         # numpy-stl mesh get normal vectors as unit vectors
+        m = self.m
         meshN = self.m.get_unit_normals()
 
         # array of intersect lengths for ALL triangles
         t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
+        direction = direction.T
         for i in range(0, len(m.v0)):
             v1 = m.v0[i]  # point 1
             v2 = m.v1[i]  # point 2
@@ -243,13 +250,13 @@ class MeshObject(Object):
             intersectLens = direction.dot(N)
             # Check if ray and plane are parallel
             if intersectLens.all() == 0:
-                break;			# no intersects
+                break			# no intersects
             # intersect lengths to plane
             t = (v1 - source).dot(N) / intersectLens
             # check if triangle behind ray
             t = np.where(t < 0, FARAWAY, t)
             # intersection point(s) (individual vectors) using equation
-            P = source + direction * t
+            P = source + direction * t[:,np.newaxis]
             # END INTERSECT TRIANGLE PLANE =============================
 
             # CHECK INSIDE/OUTSIDE =====================================
@@ -258,17 +265,17 @@ class MeshObject(Object):
             edge = v2 - v1  # vector 1-2
             vp = P - v1  # vector 1-P    array of such vectors
             C = np.cross(edge, vp)  # C IS N x 3
-            t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+            t = np.where(np.dot(C, N) < 0, FARAWAY, t)
 
             edge = v3 - v2  # vector 2-3
             vp = P - v2  # vector 2-P    array of such vectors
             C = np.cross(edge, vp)  # C IS N x 3
-            t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+            t = np.where(np.dot(C, N) < 0, FARAWAY, t)
 
             edge = v1 - v3  # vector 3-1
             vp = P - v3  # vector 3-P    array of such vectors
             C = np.cross(edge, vp)  # C IS N x 3
-            t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+            t = np.where(np.dot(C, N) < 0, FARAWAY, t)
 
             # END CHECK INSIDE/OUTSIDE =================================
 
