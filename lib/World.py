@@ -118,7 +118,7 @@ class Object:
         return screen.get_point_from_frame(v4)
 
     def intersect(self, source, direction):
-        return FARAWAY
+        return np.full(direction.shape, FARAWAY)
 
 
 class SphereObject(Object):
@@ -144,8 +144,60 @@ class MeshObject(Object):
         self.mesh = mesh
 
     def intersect(self, source, direction):
-        # TODO: @chas-card pls port over code
-        pass
+        # TODO: TEST IF WORKS
+		# numpy-stl mesh get normal vectors as unit vectors
+		meshN = m.get_unit_normals()
+
+		# array of intersect lengths for ALL triangles
+		t_overall = np.full(direction.shape, FARAWAY)  # initialize to assume all distances are FARAWAY
+
+		for i in range(0, len(mesh.v0)):
+			v1 = m.v0[i]  # point 1
+			v2 = m.v1[i]  # point 2
+			v3 = m.v2[i]  # point 3
+			N = meshN[i]
+
+			# INTERSECT TRIANGLE PLANE =================================
+			# compute intersect lengths to plane
+			intersectLens = direction.dot(N)
+			# Check if ray and plane are parallel
+			if intersectLens.all() == 0:
+				# get closest distances
+				t_overall = np.where(t < t_overall, t, t_overall)
+			# intersect lengths to plane
+			t = (v1 - source).dot(N) / intersectLens
+			# check if triangle behind ray
+			t = np.where(t < 0, FARAWAY, t)
+			# intersection point(s) (individual vectors) using equation
+			P = source + direction * t
+			# END INTERSECT TRIANGLE PLANE =============================
+
+			# CHECK INSIDE/OUTSIDE =====================================
+			# whether intersect point within triangle area
+
+			edge = v2 - v1  # vector 1-2
+			vp = P - v1  # vector 1-P    array of such vectors
+			C = np.cross(edge, vp)  # C IS N x 3
+			t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+
+			edge = v3 - v2  # vector 2-3
+			vp = P - v2  # vector 2-P    array of such vectors
+			C = np.cross(edge, vp)  # C IS N x 3
+			t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+
+			edge = v1 - v3  # vector 3-1
+			vp = P - v3  # vector 3-P    array of such vectors
+			C = np.cross(edge, vp)  # C IS N x 3
+			t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+
+			# END CHECK INSIDE/OUTSIDE =================================
+
+			# Get closest distances
+			t_overall = np.where(t < t_overall, t, t_overall)
+
+		return t_overall
+
+
 
 # testing
 
