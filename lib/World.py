@@ -143,6 +143,39 @@ class MeshObject(Object):
         super().__init__(position, frame)
         self.mesh = mesh
 
+    def np_intersect(self, source, direction):
+        m = self.mesh
+        meshN = m.get_unit_normals()
+
+        # array of intersect lengths for ALL triangles
+        t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
+
+        intersectLens = np.einsum("at,tb->ab", meshN, direction)
+
+        t = np.einsum("a,ab->ab", np.einsum("at,at->a", (m.v0 - source), meshN), np.reciprocal(intersectLens))
+        t = np.where(t < 0, FARAWAY, t)
+
+        P = source + np.einsum("ab,cb->cba", direction, t)
+
+        edge = m.v1 - m.v0
+        vp = P - m.v0[:, np.newaxis, :]
+        C = np.cross(edge[:, np.newaxis, :], vp)
+        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
+
+        edge = m.v2 - m.v1
+        vp = P - m.v0[:, np.newaxis, :]
+        C = np.cross(edge[:, np.newaxis, :], vp)
+        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
+
+        edge = m.v0 - m.v2
+        vp = P - m.v0[:, np.newaxis, :]
+        C = np.cross(edge[:, np.newaxis, :], vp)
+        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
+
+        t_overall = np.where(t < t_overall, t, t_overall)
+
+        return t_overall
+
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS
 		# numpy-stl mesh get normal vectors as unit vectors
