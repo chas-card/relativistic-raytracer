@@ -103,11 +103,27 @@ class Screen:
 
 
 class Object:
-    def __init__(self, position, frame):
+
+    def __init__(self, position, frame, diffuse, mirror=0.5):
+        """
+        Initialize new Object
+
+        :param array position: array of x y z position
+        :param Frame frame:
+        :param array diffuse: RGB colour (from 0 to 1)
+        :param float mirror: how much to reflect
+        """
         self.position = np.array(position, dtype=np_type)
         self.frame = frame
+        self.diffuse = np.array(diffuse)
+        self.mirror = mirror
 
     def intersect_frame(self, screen):
+        """
+
+        :param screen:
+        :return:
+        """
         # TODO: add inverse transform from this back to screen frame (i brain die)
         lt = screen.frame.compute_lt_to_frame(self.frame)
         pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
@@ -117,8 +133,37 @@ class Object:
         # add inv transform here before return pls
         return screen.get_point_from_frame(v4)
 
+    def diffuseColor(self, M):
+        """
+        Object colour function
+
+        :param np.ndarray M: intersection point(s)  shape(N,3)
+        :return: colour(s)
+        """
+        return self.diffuse
+
     def intersect(self, source, direction):
-        return np.full(direction.shape, FARAWAY)
+        """
+        Ray to Object Intersect function
+
+        :param np.ndarray source: ray source position vector | shape(3,)
+        :param np.ndarray direction: rays direction unit vector | shape(N,3)
+        :return: intersection distance for each ray  shape(N,)
+        """
+        return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
+
+    def light(self, source, destination, d, scene, bounce):
+        """
+        Recursive raytrace function
+
+        :param np.ndarray source: ray source position vector | shape(3,)
+        :param np.ndarray destination: rays direction unit vector | shape(N,3)
+        :param np.ndarray d: ray intersect distances | shape(N,)
+        :param scene: array of Object instances
+        :param int bounce: number of bounces
+        :return: array of colours for each pixel | shape(N,3)
+        """
+        return np.full(destination.shape[1], np.array([0,0,0]))    # default return all black
 
 
 class SphereObject(Object):
@@ -137,11 +182,14 @@ class SphereObject(Object):
         pred = (disc > 0) & (h > 0)
         return np.where(pred, h, FARAWAY)
 
+    def light(self, source, destination, d, scene, bounce):
+        return np.full(destination.shape[1], np.array([0,0,0]))    # default return all black
+
 
 class MeshObject(Object):
     def __init__(self, position, frame, mesh):
         super().__init__(position, frame)
-        self.mesh = mesh
+        self.m = mesh
 
     def np_intersect(self, source, direction):
         m = self.mesh
@@ -178,57 +226,59 @@ class MeshObject(Object):
 
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS
-		# numpy-stl mesh get normal vectors as unit vectors
-		meshN = m.get_unit_normals()
+        # numpy-stl mesh get normal vectors as unit vectors
+        meshN = self.m.get_unit_normals()
 
-		# array of intersect lengths for ALL triangles
-		t_overall = np.full(direction.shape, FARAWAY)  # initialize to assume all distances are FARAWAY
+        # array of intersect lengths for ALL triangles
+        t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
-		for i in range(0, len(mesh.v0)):
-			v1 = m.v0[i]  # point 1
-			v2 = m.v1[i]  # point 2
-			v3 = m.v2[i]  # point 3
-			N = meshN[i]
+        for i in range(0, len(m.v0)):
+            v1 = m.v0[i]  # point 1
+            v2 = m.v1[i]  # point 2
+            v3 = m.v2[i]  # point 3
+            N = meshN[i]
 
-			# INTERSECT TRIANGLE PLANE =================================
-			# compute intersect lengths to plane
-			intersectLens = direction.dot(N)
-			# Check if ray and plane are parallel
-			if intersectLens.all() == 0:
-				# get closest distances
-				t_overall = np.where(t < t_overall, t, t_overall)
-			# intersect lengths to plane
-			t = (v1 - source).dot(N) / intersectLens
-			# check if triangle behind ray
-			t = np.where(t < 0, FARAWAY, t)
-			# intersection point(s) (individual vectors) using equation
-			P = source + direction * t
-			# END INTERSECT TRIANGLE PLANE =============================
+            # INTERSECT TRIANGLE PLANE =================================
+            # compute intersect lengths to plane
+            intersectLens = direction.dot(N)
+            # Check if ray and plane are parallel
+            if intersectLens.all() == 0:
+                break;			# no intersects
+            # intersect lengths to plane
+            t = (v1 - source).dot(N) / intersectLens
+            # check if triangle behind ray
+            t = np.where(t < 0, FARAWAY, t)
+            # intersection point(s) (individual vectors) using equation
+            P = source + direction * t
+            # END INTERSECT TRIANGLE PLANE =============================
 
-			# CHECK INSIDE/OUTSIDE =====================================
-			# whether intersect point within triangle area
+            # CHECK INSIDE/OUTSIDE =====================================
+            # whether intersect point within triangle area
 
-			edge = v2 - v1  # vector 1-2
-			vp = P - v1  # vector 1-P    array of such vectors
-			C = np.cross(edge, vp)  # C IS N x 3
-			t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+            edge = v2 - v1  # vector 1-2
+            vp = P - v1  # vector 1-P    array of such vectors
+            C = np.cross(edge, vp)  # C IS N x 3
+            t = np.where(np.dot(N, C) < 0, FARAWAY, t)
 
-			edge = v3 - v2  # vector 2-3
-			vp = P - v2  # vector 2-P    array of such vectors
-			C = np.cross(edge, vp)  # C IS N x 3
-			t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+            edge = v3 - v2  # vector 2-3
+            vp = P - v2  # vector 2-P    array of such vectors
+            C = np.cross(edge, vp)  # C IS N x 3
+            t = np.where(np.dot(N, C) < 0, FARAWAY, t)
 
-			edge = v1 - v3  # vector 3-1
-			vp = P - v3  # vector 3-P    array of such vectors
-			C = np.cross(edge, vp)  # C IS N x 3
-			t = np.where(np.dot(N, C) < 0, FARAWAY, t)
+            edge = v1 - v3  # vector 3-1
+            vp = P - v3  # vector 3-P    array of such vectors
+            C = np.cross(edge, vp)  # C IS N x 3
+            t = np.where(np.dot(N, C) < 0, FARAWAY, t)
 
-			# END CHECK INSIDE/OUTSIDE =================================
+            # END CHECK INSIDE/OUTSIDE =================================
 
-			# Get closest distances
-			t_overall = np.where(t < t_overall, t, t_overall)
+            # Get closest distances
+            t_overall = np.where(t < t_overall, t, t_overall)
 
-		return t_overall
+        return t_overall
+
+    def light(self, source, destination, d, scene, bounce):
+        return np.full(destination.shape[1], np.array([0,0,0]))    # default return all black
 
 
 
