@@ -1,16 +1,16 @@
 import numpy as np
 
 np_type = np.float64
-c = 3 * 10e8
+c = 3e8
 
 FARAWAY = 1.0e+39  # A large distance
 
 def norm(arr): return arr/np.sqrt(np.sum(np.square(arr),axis=1))
 def lt_velo(lt, velo):
-    velo[:,newaxis]
-    v4 = np.stack((np.ones(np.shape(velo)[1]), velo), axis=0)
+    velo=velo[:,np.newaxis]
+    v4 = np.concatenate((np.array([c*np.ones(np.shape(velo)[1])]), velo), axis=0)
     vp4 = lt @ v4
-    return vp4[1:]/vp4[0]
+    return vp4[1:]*c/vp4[0]
 
 # frame class to handle defining different reference frames with respect to other reference frames
 # world frame is just (0, 0, 0, 0) position, use it as a "special" frame to transform between any frames
