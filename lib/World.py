@@ -190,6 +190,7 @@ class MeshObject(Object):
     def __init__(self, position, frame, mesh, diffuse, mirror=0.5):
         super().__init__(position, frame, diffuse, mirror=mirror)
         self.m = mesh
+        self.chunksize = 60
 
     def np_intersect(self, source, direction):
         m = self.m
@@ -198,34 +199,47 @@ class MeshObject(Object):
         # array of intersect lengths for ALL triangles
         t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
-        intersectLens = np.einsum("at,tb->ab", meshN, direction)
+        polygons = meshN.shape[0]
+        N = polygons//self.chunksize
 
-        t = np.einsum("a,ab->ab", np.einsum("at,at->a", (m.v0 - source), meshN), np.reciprocal(intersectLens))
-        t = np.where(t < 0, FARAWAY, t)
+        chunks = [min((i+1)*self.chunksize, polygons) for i in range(N)]
+        meshN_chunks = np.array_split(meshN, chunks, axis=0)
+        v0_chunks = np.array_split(m.v0, chunks, axis=0)
+        v1_chunks = np.array_split(m.v1, chunks, axis=0)
+        v2_chunks = np.array_split(m.v2, chunks, axis=0)
 
-        P = source + np.einsum("ab,cb->cba", direction, t)
+        done_size = 0
+        for i in range(N):
+            curr_size = meshN_chunks[i].shape[0]
+            intersectLens = np.einsum("at,tb->ab", meshN_chunks[i], direction)
 
-        edge = (m.v1 - m.v0)[:, np.newaxis, :]
-        vp = P - m.v0[:, np.newaxis, :]
-        print("sus")
-        C = np.cross(edge, vp)
-        print("sy")
-        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
-        print("amo")
+            t = np.einsum("a,ab->ab", np.einsum("at,at->a", (v0_chunks[i] - source), meshN_chunks[i]), np.reciprocal(intersectLens))
+            t = np.where(t < 0, FARAWAY, t)
 
-        edge = (m.v2 - m.v1)[:, np.newaxis, :]
-        print("ng")
-        vp = P - m.v1[:, np.newaxis, :]
-        C = np.cross(edge, vp)
-        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
+            P = source + np.einsum("ab,cb->cba", direction, t)
 
-        edge = (m.v0 - m.v2)[:, np.newaxis, :]
-        vp = P - m.v2[:, np.newaxis, :]
-        C = np.cross(edge, vp)
-        t = np.where(np.einsum("ab,acb->ac", meshN, C) < 0, FARAWAY, t)
+            edge = (v1_chunks[i] - v0_chunks[i])[:, np.newaxis, :]
+            vp = P - v0_chunks[i][:, np.newaxis, :]
+            C = np.cross(edge, vp)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
+            t = np.where(d < 0, FARAWAY, t)
 
-        min_t = np.min(t, axis=0)
-        t_overall = np.where(min_t < t_overall, min_t, t_overall)
+            edge = (v2_chunks[i] - v1_chunks[i])[:, np.newaxis, :]
+            vp = P - v1_chunks[i][:, np.newaxis, :]
+            C = np.cross(edge, vp)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
+            t = np.where(d < 0, FARAWAY, t)
+
+            edge = (v0_chunks[i] - v2_chunks[i])[:, np.newaxis, :]
+            vp = P - v2_chunks[i][:, np.newaxis, :]
+            C = np.cross(edge, vp)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
+            t = np.where(d < 0, FARAWAY, t)
+
+            min_t = np.min(t, axis=0)
+            done_size += curr_size
+            t_overall = np.where(min_t < t_overall, min_t, t_overall)
+            print(done_size)
 
         return t_overall
 
