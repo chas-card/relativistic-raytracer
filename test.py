@@ -18,7 +18,7 @@ y = np.repeat(np.linspace(S[1], S[3], h), w)
 coords = np.stack((x, y, np.zeros(x.shape[0])), axis=0)
 dirs = coords - source[:, np.newaxis]
 
-m = mesh.Mesh.from_file('models/bottle.stl')
+m = mesh.Mesh.from_file('models/block100.stl')
 direction = dirs
 
 frame = W.Frame((0, 0, 0))
