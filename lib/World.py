@@ -6,7 +6,7 @@ c = 3e8
 
 FARAWAY = 1.0e+39  # A large distance
 
-def norm(arr): return arr/np.sqrt(np.sum(np.square(arr),axis=1))
+def norm(arr): return arr/np.sqrt(np.sum(np.square(arr),axis=0))
 def lt_velo(lt, velo):
     if len(np.shape(velo))==1: velo=velo[:,np.newaxis]
     v4 = np.concatenate((np.array([c*np.ones(np.shape(velo)[1])]), velo), axis=0)
@@ -82,7 +82,7 @@ class Screen:
         # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
         #  are all the same time?
         self.screen_coords = np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0)
-        self.ray_dirs = (self.screen_coords - self.point[:,np.newaxis])[1:]
+        self.ray_dirs = norm((self.screen_coords - self.point[:,np.newaxis])[1:])
 
     # get the "eye" point in any other frame
     def get_point_in_frame(self, toframe):
@@ -127,6 +127,7 @@ class Scene:
                 ret = np.zeros((*hit.shape,3))
                 print(np.shape(ret),np.shape(cc))
                 for i in range(3):
+                    print(sum(cc))
                     np.place(ret[:,i],hit,cc[:,i])
                 color+=ret
         return color
@@ -168,9 +169,11 @@ class Object:
         :param screen:
         :return:
         """
+        print("ping!")
         lt = screen.frame.compute_lt_to_frame(self.frame)
         pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
         time, pos = pt[0], pt[1:]
+        print(self.light(pos, dirs, dists, scene, bounce))
         return self.light(pos, dirs, dists, scene, bounce)
 
     def diffuseColor(self, M):
@@ -203,7 +206,7 @@ class Object:
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
         """
-        return np.full(direction.shape[1], np.array([0,0,0]))    # default return all black
+        return np.full(direction.shape[1], np.array([1,1,1]))    # default return all black
 
 
 class SphereObject(Object):
@@ -212,18 +215,25 @@ class SphereObject(Object):
         self.radius = radius
 
     def intersect(self, source, direction): # this is refactored and likely broken btw just check
+        print(direction[:,0])
+        print(source, self.position)
         b = 2 * np.dot(direction.T, source - self.position)
-        c = np.sum(np.square(self.position)) + np.sum(np.square(source)) - 2 * np.dot(self.position, source) - (self.radius ** 2)
+        print(np.shape(b))
+        c = np.sum(np.square(self.position),axis=0) + np.sum(np.square(source),axis=0) - 2 * np.dot(self.position, source) - (self.radius ** 2)
+        print(c)
+        print(np.shape(c))
         disc = (b ** 2) - (4 * c)
         sq = np.sqrt(np.maximum(0, disc))
         h0 = (-b - sq) / 2
         h1 = (-b + sq) / 2
+        print(b[0],c,h0[0],h1[0])
         h = np.where((h0 > 0) & (h0 < h1), h0, h1)
         pred = (disc > 0) & (h > 0)
+        print(np.sum(pred))
         return np.where(pred, h, FARAWAY)
 
     def light(self, source, direction, d, scene, bounce):
-        return np.full((direction.shape[1],3), np.array([0,0,0]))    # default return all black
+        return np.full((direction.shape[1],3), np.array([1,1,1]))    # default return all black
 
 
 class MeshObject(Object):
@@ -355,7 +365,7 @@ print(f3.from_world_lt)
 print(lt_velo(f1.lt,np.array([0,.8*c,0])))
 
 cam = Screen(np.array((0, 0.35, -1)),0,f1)
-sphere = SphereObject(np.array((0,1,0)),f1,np.array((.1,.2,.3)),1)
+sphere = SphereObject(np.array((.75,.1,1)),f1,np.array((0,0,1)),.6)
 scene = Scene(cam, np.array((300, 1000, -300)), [sphere])
 color = scene.raytrace()
 rgb = [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
