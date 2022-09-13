@@ -5,28 +5,34 @@ c = 3 * 10e8
 
 FARAWAY = 1.0e+39  # A large distance
 
+def norm(arr): return arr/np.sqrt(np.sum(np.square(arr),axis=1))
+def lt_velo(lt, velo):
+    velo[:,newaxis]
+    v4 = np.stack((np.ones(np.shape(velo)[1]), velo), axis=0)
+    vp4 = lt @ v4
+    return vp4[1:]/vp4[0]
 
 # frame class to handle defining different reference frames with respect to other reference frames
 # world frame is just (0, 0, 0, 0) position, use it as a "special" frame to transform between any frames
 class Frame:
-    def __init__(self, velocity, position, time, ref):
+    def __init__(self, velocity, ref=None):
         self.velocity = np.array(velocity, dtype=np_type)
-        self.position = np.array(position, dtype=np_type)
-        self.time = time
         self.ref = ref
 
     @property
     def lt(self):
-        b2 = np.sum(np.square(self.velocity))
-        assert (b <= 1)
+        b=self.velocity/c
+        b2 = np.sum(np.square(b))
+        assert (b2 <= 1)
 
         g = 1 / (np.sqrt(1 - b2))
 
         lt_mat = np.eye(4, dtype=np_type)
         lt_mat[0, 0] = g
-        lt_mat[0, 1:] = lt_mat[1:, 0] = -self.velocity * g / c
-        lt_mat[1:, 1:] += (g - 1) * np.matmul(self.velocity[np.newaxis].T, self.velocity[np.newaxis]) / b2
+        lt_mat[0, 1:] = lt_mat[1:, 0] = -b * g
+        lt_mat[1:, 1:] += (g - 1) * np.matmul(b[np.newaxis].T, b[np.newaxis]) / b2
 
+        assert(abs(np.linalg.det(lt_mat)-1)<1e-12)
         return lt_mat
 
     @property
@@ -39,23 +45,22 @@ class Frame:
     @property
     def to_world_lt(self):
         if self.ref is None:
-            return np.eye(4, dtype=np_type)
+            return self.inv_lt
         else:
-            return np.matmul(self.inv_lt, self.ref.to_world)
+            return np.matmul(self.ref.to_world_lt, self.inv_lt)
 
     @property
     def from_world_lt(self):
         if self.ref is None:
-            return np.eye(4, dtype=np_type)
+            return self.lt
         else:
-            return np.matmul(self.ref.from_world, self.ref.lt)
+            return np.matmul(self.lt, self.ref.from_world_lt)
 
     def compute_lt_to_frame(self, frame):
-        return np.matmul(self.to_world_lt, frame.from_world_lt)
+        return np.matmul(frame.from_world_lt, self.to_world_lt)
 
     def compute_lt_from_frame(self, frame):
-        return np.matmul(frame.to_world_lt, self.from_world_lt)
-
+        return np.matmul(self.from_world_lt, frame.to_world_lt)
 
 # Screen class acts as the camera from which rays are projected
 # TODO: make screen class work for arbitratily defined screen coords
@@ -73,12 +78,16 @@ class Screen:
 
         # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
         #  are all the same time?
-        self.screen_coords = np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=1)
-        self.ray_dirs = self.screen_coords - self.point
+        self.screen_coords = np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0)
+        self.ray_dirs = (self.screen_coords - self.point)[1:]
 
     # get the "eye" point in any other frame
     def get_point_in_frame(self, toframe):
         lt = self.frame.compute_lt_to_frame(toframe)
+        return np.matmul(lt, self.point)
+
+    def get_point_from_frame(self, fromframe):
+        lt = self.frame.compute_lt_from_frame(fromframe)
         return np.matmul(lt, self.point)
 
     # get the coords of the screen in any other frame
@@ -89,16 +98,24 @@ class Screen:
     # get the projected ray directions from any other frame (3D vector!)
     # TODO: check this (not sure whether it is ok to discard time info for the coord points)
     def get_ray_dirs_in_frame(self, toframe):
-        coords = self.get_screen_coords_in_frame(toframe)
-        pt = self.get_point_in_frame(toframe)
-        dirs = coords - pt
-        return dirs[1:]
+        lt = self.frame.compute_lt_to_frame(toframe)
+        return lt_velo(lt, self.ray_dirs)
 
 
 class Object:
     def __init__(self, position, frame):
         self.position = np.array(position, dtype=np_type)
         self.frame = frame
+
+    def intersect_frame(self, screen):
+        # TODO: add inverse transform from this back to screen frame (i brain die)
+        lt = screen.frame.compute_lt_to_frame(self.frame)
+        pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
+        time, pos = pt[0], pt[1:]
+        dists = self.intersect(pos, dirs)
+        v4 = np.stack((time-(dists/c),pos+(dirs*dists)),axis=0)
+        # add inv transform here before return pls
+        return screen.get_point_from_frame(v4)
 
     def intersect(self, source, direction):
         return FARAWAY
@@ -108,15 +125,6 @@ class SphereObject(Object):
     def __init__(self, position, frame, radius):
         super().__init__(position, frame)
         self.radius = radius
-
-    def intersect_frame(self, source, direction, screen):
-        # TODO: add inverse transform from this back to screen frame (i brain die)
-        pt = screen.get_point_in_frame()
-        time = pt[0]
-        pos = pt[1:]
-
-        # add inv transform here before return pls
-        return self.intersect(pos, screen.get_ray_dirs_in_frame())
 
     def intersect(self, source, direction): # this is refactored and likely broken btw just check
         b = 2 * np.dot(direction, source - self.position)
@@ -135,10 +143,16 @@ class MeshObject(Object):
         super().__init__(position, frame)
         self.mesh = mesh
 
-    def intersect_frame(self, source, direction, screen):
-        # TODO: add inverse transform from this back to screen frame (i brain die)
-        return self.intersect(screen.get_point_in_frame(), screen.get_ray_dirs_in_frame())
-
     def intersect(self, source, direction):
         # TODO: @chas-card pls port over code
         pass
+
+# testing
+
+f0=Frame([.6*c,0,0])
+f1=Frame([.8*c,0,0],f0)
+f2=Frame([-.8*c,0,0],f1)
+print(f0.from_world_lt)
+print(f1.from_world_lt)
+print(f2.from_world_lt)
+print(lt_velo(f0.lt,np.array([0,.8*c,0])))
