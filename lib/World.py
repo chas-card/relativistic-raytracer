@@ -70,7 +70,7 @@ class Frame:
 # TODO: make screen class work for arbitratily defined screen coords
 class Screen:
     def __init__(self, res, time, frame):
-        self.point = np.array((time*c, 0, .35, -10), dtype=np_type)
+        self.point = np.array((time*c, 0, 1, -10), dtype=np_type)
         self.frame = frame
 
         self.w, self.h = w, h = (640, 480)
@@ -112,26 +112,30 @@ class Scene:
         self.light = light
         self.objs = objs
     
-    def raytrace(self, bounce=0):
-        dists, norms = zip(*[s.intersect_frame(self.camera) for s in self.objs]) # (objects) x (screen dims)
+    def raytrace(self, source, dirs, frame, bounce=0):
+        dists, norms = zip(*[s.intersect_frame(source, dirs, frame) for s in self.objs]) # (objects) x (screen dims)
         nearest = np.amin(dists, axis=0)
         color = np.array(np.zeros((*nearest.shape,3)))
-        for (s, d) in zip(self.objs, dists):
+        for (s, d, n) in zip(self.objs, dists, norms):
             hit = (nearest < 1e30) & (d == nearest)
             if np.any(hit):
-                distsc = np.extract(hit, d)
-                dirsc = np.extract(hit, self.camera.ray_dirs)
-                normsc = np.extract(hit, norms)
-                colorc = s.light_frame(self.camera, dirsc, distsc, normsc, self.objs, .5)
+                sourcec = np.compress(hit, source, axis=1)
+                distsc = np.compress(hit, d)
+                dirsc = np.compress(hit, dirs,axis=1)
+                normsc = np.compress(hit, n, axis=1)
+                print(np.shape(dirsc),np.shape(distsc),np.shape(normsc),"aaa")
+                colorc = s.light_frame(sourcec, dirsc, distsc, normsc, frame, self, bounce)
                 ret = np.zeros((*hit.shape,3))
                 for i in range(3):
                     np.place(ret[:,i],hit,colorc[:,i])
                 color+=ret
         return color
 
+    def tracescene(self):
+        return self.raytrace(np.array([self.camera.point]*np.shape(self.camera.ray_dirs)[1]).T,self.camera.ray_dirs,self.camera.frame,bounce=0)
 class Object:
 
-    def __init__(self, position, frame, diffuse, mirror=0.5):
+    def __init__(self, position, frame, diffuse, mirror=0.8):
         """
         Initialize new Object
 
@@ -145,31 +149,39 @@ class Object:
         self.diffuse = np.array(diffuse, dtype=np_type)
         self.mirror = mirror
 
-    def intersect_frame(self, screen):
+    def intersect_frame(self, source, dirs, frame):
         """
 
         :param screen:
         :return:
         """
-        print(screen.frame.compute_lt_to_frame(self.frame))
-        pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
+        lt = frame.compute_lt_to_frame(self.frame)
+        print(source)
+        pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
 
         time, pos = pt[0], pt[1:]
-        dists, norms = self.intersect(pos, dirs)
+        (dists, norms) = self.intersect(pos, dirs)
         
-        v4 = np.concatenate((np.array([time-(dists/c)]),pos[:,np.newaxis]+(dirs*dists)),axis=0)
-        return (np.sqrt(np.sum(np.square((screen.frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1)), norms)
+        v4 = np.concatenate((np.array([time-(dists/c)]),pos+(dirs*dists)),axis=0)
+        return (np.sqrt(np.sum(np.square((frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1)), norms)
 
-    def light_frame(self, screen, dirs, dists, norms, scene, bounce):
+    def light_frame(self, source, dirs, dists, norms, frame, scene, bounce):
         """
 
         :param screen:
         :return:
         """
         print("ping!")
-        lt = screen.frame.compute_lt_to_frame(self.frame)
-        pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
+        lt = frame.compute_lt_to_frame(self.frame)
+
+        pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
         time, pos = pt[0], pt[1:]
+        
+        print(np.shape(dirs),np.shape(dists),np.shape(pos))
+        v4 = np.concatenate(([time],np.einsum("ij,j->ij",dirs,dists)-pos),axis=0)
+        print(np.shape(v4))
+        dists = np.sqrt(np.sum(np.square((lt @ v4)[1:].T), axis=1))
+        
         return self.light(pos, dirs, dists, norms, scene, bounce)
 
     def diffuseColor(self, M):
@@ -203,7 +215,31 @@ class Object:
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
         """
-        return np.full(direction.shape[1], self.diffuseColor(None))    # default return all black
+        print(np.shape(dirs*dists))
+        pts = source + dirs*(dists.T)
+        tol = norm(scene.light[:,np.newaxis] - pts)
+        toc = norm(source - pts)
+        nudged = pts + norms*.0001
+
+        n4d = np.concatenate((np.array([np.zeros(np.shape(nudged)[1])]), nudged), axis=0) #TODO
+        distsl = [s.intersect_frame(n4d,tol,self.frame)[0] for s in scene.objs]
+        nearl = np.amin(distsl,axis=0)
+        seelight = distsl[scene.objs.index(self)] == nearl
+
+        color = np.array([[.05]*3]*len(dists))
+
+        lv = np.maximum(np.einsum("ij,ij->j",norms,tol),0)
+        color+=np.outer((lv * seelight),self.diffuseColor(pts))
+
+        if bounce<1:
+            nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j",dirs,norms))
+            color += scene.raytrace(n4d, nray, self.frame, bounce+1) * self.mirror
+
+        phong = np.einsum("ij,ij->j",norms, norm(tol+toc))
+        color += np.outer((np.power(np.clip(phong, 0, 1), 50) * seelight),np.ones(3))
+
+        return color
+        #return np.full(direction.shape[1], self.diffuseColor(None))    # default return all black
 
 
 class SphereObject(Object):
@@ -212,8 +248,7 @@ class SphereObject(Object):
         self.radius = radius
 
     def intersect(self, source, direction): # this is refactored and likely broken btw just check
-
-        b = 2 * np.dot(direction.T, source - self.position)
+        b = 2 * np.einsum("ij,ij->j", direction, source - self.position[:,np.newaxis])
         c = np.sum(np.square(self.position),axis=0) + np.sum(np.square(source),axis=0) - 2 * np.dot(self.position, source) - (self.radius ** 2)
 
         disc = (b ** 2) - (4 * c)
@@ -222,10 +257,14 @@ class SphereObject(Object):
         h1 = (-b + sq) / 2
         h = np.where((h0 > 0) & (h0 < h1), h0, h1)
         pred = (disc > 0) & (h > 0)
-        return np.where(pred, h, FARAWAY)
+        print(np.shape(source),np.shape(self.position),np.shape(h),np.shape(direction.T))
+        return (
+            np.where(pred, h, FARAWAY), 
+            np.where(pred[np.newaxis,:], (source-self.position[:,np.newaxis]+np.einsum("ij,j->ij",direction,h)) / self.radius, np.zeros(np.shape(direction)))
+        )
 
-    def light(self, source, dirs, dists, norms, scene, bounce):
-        return np.full((dirs.shape[1],3), self.diffuseColor(None))    # default return all black
+    #def light(self, source, dirs, dists, norms, scene, bounce):
+        #return np.full((dirs.shape[1],3), self.diffuseColor(None))    # default return all black
 
 
 class MeshObject(Object):
@@ -345,8 +384,8 @@ class MeshObject(Object):
 
         return t_overall - 1
 
-    def light(self, source, dirs, dists, norms, scene, bounce):
-        return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
+    #def light(self, source, dirs, dists, norms, scene, bounce):
+        #return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
 
 
 
@@ -358,10 +397,13 @@ f2=Frame([.8*c,0,0],f1)
 f3=Frame([-.8*c,0,0],f2)
 
 cam = Screen(None,0,f0)
-sphere = SphereObject(np.array((200,.1,1)),f1,np.array((0,0,1)),.6)
-sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((0,1,0)),.6)
-scene = Scene(cam, np.array((300, 1000, -300)), [sphere,sphere2])
-color = scene.raytrace()
+sphere = SphereObject(np.array((200,.1,1)),f1,np.array((0,1,1)),.6)
+sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((1,1,0)),.6)
+s1 = SphereObject(np.array((-5,4,1)),f0,np.array((0,1,0)),2)
+s2 = SphereObject(np.array((0,-901,0)),f0,np.array((1,0,0)),900)
+s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
+scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,sphere,sphere2])
+color = scene.tracescene()
 
 print(f1.compute_lt_from_frame(f0) @ np.array((0,-1,.1,1)))
 Image.merge("RGB", 
