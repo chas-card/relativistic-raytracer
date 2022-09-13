@@ -1,5 +1,6 @@
 from PIL import Image
 import numpy as np
+import math
 
 np_type = np.float32
 c = 3e8
@@ -240,9 +241,9 @@ class MeshObject(Object):
         t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
         polygons = meshN.shape[0]
-        N = polygons//self.chunksize
+        N = math.ceil(polygons/self.chunksize)
 
-        chunks = [min((i+1)*self.chunksize, polygons) for i in range(N+1)]
+        chunks = [min((i+1)*self.chunksize, polygons) for i in range(N)]
         print(chunks)
         meshN_chunks = np.array_split(meshN, chunks, axis=0)
         v0_chunks = np.array_split(m.v0, chunks, axis=0)
@@ -250,7 +251,7 @@ class MeshObject(Object):
         v2_chunks = np.array_split(m.v2, chunks, axis=0)
 
         done_size = 0
-        for i in range(N+1):
+        for i in range(N):
             curr_size = meshN_chunks[i].shape[0]
             intersectLens = np.einsum("at,tb->ab", meshN_chunks[i], direction)
 
