@@ -118,7 +118,7 @@ class Object:
         return screen.get_point_from_frame(v4)
 
     def intersect(self, source, direction):
-        return np.full(direction.shape, FARAWAY)
+        return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
 
 
 class SphereObject(Object):
@@ -141,17 +141,17 @@ class SphereObject(Object):
 class MeshObject(Object):
     def __init__(self, position, frame, mesh):
         super().__init__(position, frame)
-        self.mesh = mesh
+        self.m = mesh
 
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS
 		# numpy-stl mesh get normal vectors as unit vectors
-		meshN = m.get_unit_normals()
+		meshN = self.m.get_unit_normals()
 
 		# array of intersect lengths for ALL triangles
-		t_overall = np.full(direction.shape, FARAWAY)  # initialize to assume all distances are FARAWAY
+		t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
-		for i in range(0, len(mesh.v0)):
+		for i in range(0, len(m.v0)):
 			v1 = m.v0[i]  # point 1
 			v2 = m.v1[i]  # point 2
 			v3 = m.v2[i]  # point 3
@@ -162,8 +162,7 @@ class MeshObject(Object):
 			intersectLens = direction.dot(N)
 			# Check if ray and plane are parallel
 			if intersectLens.all() == 0:
-				# get closest distances
-				t_overall = np.where(t < t_overall, t, t_overall)
+				break;			# no intersects
 			# intersect lengths to plane
 			t = (v1 - source).dot(N) / intersectLens
 			# check if triangle behind ray
