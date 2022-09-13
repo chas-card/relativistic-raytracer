@@ -113,18 +113,19 @@ class Scene:
         self.objs = objs
     
     def raytrace(self, bounce=0):
-        distances = [s.intersect_frame(self.camera) for s in self.objs] # (objects) x (screen dims)
-        nearest = np.amin(distances, axis=0)
+        dists, norms = zip(*[s.intersect_frame(self.camera) for s in self.objs]) # (objects) x (screen dims)
+        nearest = np.amin(dists, axis=0)
         color = np.array(np.zeros((*nearest.shape,3)))
-        for (s, d) in zip(self.objs, distances):
+        for (s, d) in zip(self.objs, dists):
             hit = (nearest < 1e30) & (d == nearest)
             if np.any(hit):
                 distsc = np.extract(hit, d)
-                dirsc = np.extract(hit, distances)
-                cc = s.light_frame(self.camera, dirsc, distsc, self.objs, .5)
+                dirsc = np.extract(hit, self.camera.ray_dirs)
+                normsc = np.extract(hit, norms)
+                colorc = s.light_frame(self.camera, dirsc, distsc, normsc, self.objs, .5)
                 ret = np.zeros((*hit.shape,3))
                 for i in range(3):
-                    np.place(ret[:,i],hit,cc[:,i])
+                    np.place(ret[:,i],hit,colorc[:,i])
                 color+=ret
         return color
 
@@ -154,12 +155,12 @@ class Object:
         pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
 
         time, pos = pt[0], pt[1:]
-        dists = self.intersect(pos, dirs)
+        dists, norms = self.intersect(pos, dirs)
         
         v4 = np.concatenate((np.array([time-(dists/c)]),pos[:,np.newaxis]+(dirs*dists)),axis=0)
-        return np.sqrt(np.sum(np.square((screen.frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1))
+        return (np.sqrt(np.sum(np.square((screen.frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1)), norms)
 
-    def light_frame(self, screen, dirs, dists, scene, bounce):
+    def light_frame(self, screen, dirs, dists, norms, scene, bounce):
         """
 
         :param screen:
@@ -169,7 +170,7 @@ class Object:
         lt = screen.frame.compute_lt_to_frame(self.frame)
         pt, dirs = screen.get_point_in_frame(self.frame), screen.get_ray_dirs_in_frame(self.frame)
         time, pos = pt[0], pt[1:]
-        return self.light(pos, dirs, dists, scene, bounce)
+        return self.light(pos, dirs, dists, norms, scene, bounce)
 
     def diffuseColor(self, M):
         """
@@ -190,13 +191,14 @@ class Object:
         """
         return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
 
-    def light(self, source, direction, d, scene, bounce):
+    def light(self, source, dirs, dists, norms, scene, bounce):
         """
         Recursive raytrace function
 
         :param np.ndarray source: ray source position vector | shape(3,)
-        :param np.ndarray direction: rays direction unit vector | shape(N,3)
-        :param np.ndarray d: ray intersect distances | shape(N,)
+        :param np.ndarray dirs: rays direction unit vector | shape(N,3)
+        :param np.ndarray dists: ray intersect distances | shape(N,)
+        :param np.ndarray norms: object-frame face normals | shape(N,)
         :param scene: array of Object instances
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
@@ -222,8 +224,8 @@ class SphereObject(Object):
         pred = (disc > 0) & (h > 0)
         return np.where(pred, h, FARAWAY)
 
-    def light(self, source, direction, d, scene, bounce):
-        return np.full((direction.shape[1],3), self.diffuseColor(None))    # default return all black
+    def light(self, source, dirs, dists, norms, scene, bounce):
+        return np.full((dirs.shape[1],3), self.diffuseColor(None))    # default return all black
 
 
 class MeshObject(Object):
@@ -343,8 +345,8 @@ class MeshObject(Object):
 
         return t_overall - 1
 
-    def light(self, source, direction, d, scene, bounce):
-        return np.full(direction.shape[1], np.array([0,0,0]))    # default return all black
+    def light(self, source, dirs, dists, norms, scene, bounce):
+        return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
 
 
 
