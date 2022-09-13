@@ -231,7 +231,8 @@ class MeshObject(Object):
     def __init__(self, position, frame, mesh, diffuse, mirror=0.5):
         super().__init__(position, frame, diffuse, mirror=mirror)
         self.m = mesh
-        self.chunksize = 80
+        self.m.translate(position)
+        self.chunksize = 50
 
     def np_intersect(self, source, direction):
         m = self.m
@@ -286,7 +287,7 @@ class MeshObject(Object):
             t_overall = np.where(min_t < t_overall, min_t, t_overall)
             print(done_size)
 
-        return t_overall
+        return t_overall - 1
 
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS
@@ -341,7 +342,7 @@ class MeshObject(Object):
             # Get closest distances
             t_overall = np.where(t < t_overall, t, t_overall)
 
-        return t_overall
+        return t_overall - 1
 
     def light(self, source, direction, d, scene, bounce):
         return np.full(direction.shape[1], np.array([0,0,0]))    # default return all black
