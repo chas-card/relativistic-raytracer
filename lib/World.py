@@ -197,12 +197,9 @@ class Object:
         """
         Ray to Object Intersect function
 
-        :param np.ndarray source: ray source position vector    | shape(3,N)
+        :param np.ndarray source: ray source position vector | shape(3,)
         :param np.ndarray direction: rays direction unit vector | shape(N,3)
-        :return: tuple with (
-            intersection distance for each ray          | shape(N,)
-            intersection normals for each ray           | shape(N,3)
-            )
+        :return: intersection distance for each ray  shape(N,)
         """
         return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
 
@@ -210,7 +207,7 @@ class Object:
         """
         Recursive raytrace function
 
-        :param np.ndarray source: ray source position vector | shape(N,3)
+        :param np.ndarray source: ray source position vector | shape(3,)
         :param np.ndarray dirs: rays direction unit vector | shape(N,3)
         :param np.ndarray dists: ray intersect distances | shape(N,)
         :param np.ndarray norms: object-frame face normals | shape(N,)
@@ -330,7 +327,7 @@ class MeshObject(Object):
             t_overall = np.where(min_t < t_overall, min_t, t_overall)
             print(done_size)
 
-        return t_overall
+        return t_overall - 1
 
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS
@@ -339,11 +336,7 @@ class MeshObject(Object):
         meshN = self.m.get_unit_normals()
 
         # array of intersect lengths for ALL triangles
-        # initialize to assume all distances are FARAWAY
-        t_overall = np.full(direction.shape[1], FARAWAY)
-
-        # array of intersect normals for ALL triangles
-        N_overall = np.full(direction.shape, 0).T
+        t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
         direction = direction.T
         for i in range(0, len(m.v0)):
@@ -359,11 +352,11 @@ class MeshObject(Object):
             if intersectLens.all() == 0:
                 continue			# no intersects
             # intersect lengths to plane
-            t = (v1 - source.T).dot(N) / intersectLens
+            t = (v1 - source).dot(N) / intersectLens
             # check if triangle behind ray
             t = np.where(t < 0, FARAWAY, t)
             # intersection point(s) (individual vectors) using equation
-            P = source.T + direction * t[:,np.newaxis]
+            P = source + direction * t[:,np.newaxis]
             # END INTERSECT TRIANGLE PLANE =============================
 
             # CHECK INSIDE/OUTSIDE =====================================
@@ -386,14 +379,33 @@ class MeshObject(Object):
 
             # END CHECK INSIDE/OUTSIDE =================================
 
-            # array of whether t < t_overall
-            tLess_bool = t < t_overall
-
             # Get closest distances
-            t_overall = np.where(tLess_bool, t, t_overall)
+            t_overall = np.where(t < t_overall, t, t_overall)
 
-            # Add normals to N_overall (only if t was closer)
-            tLess_bool_broadcast = np.repeat(tLess_bool.reshape((1, len(tLess_bool))), 3, axis=0).T
-            N_overall = np.where(tLess_bool_broadcast, N, N_overall)
+        return t_overall - 1
 
-        return (t_overall, N_overall)
+    #def light(self, source, dirs, dists, norms, scene, bounce):
+        #return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
+
+
+
+# testing
+
+f0=Frame([0,0,0])
+f1=Frame([-7.99,0,0],f0)
+f2=Frame([.8*c,0,0],f1)
+f3=Frame([-.8*c,0,0],f2)
+
+cam = Screen(None,0,f0)
+sphere = SphereObject(np.array((200,.1,1)),f1,np.array((0,1,1)),.6)
+sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((1,1,0)),.6)
+s1 = SphereObject(np.array((-5,4,1)),f0,np.array((0,1,0)),2)
+s2 = SphereObject(np.array((0,-901,0)),f0,np.array((1,0,0)),900)
+s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
+scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,sphere,sphere2])
+color = scene.tracescene()
+
+print(f1.compute_lt_from_frame(f0) @ np.array((0,-1,.1,1)))
+Image.merge("RGB", 
+    [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
+).show()
