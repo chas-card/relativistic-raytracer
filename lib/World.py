@@ -72,9 +72,9 @@ class Frame:
 
 # Screen class acts as the camera from which rays are projected
 class Camera:
-    def __init__(self, time, pos, rotn, dof, frame, bounces):
+    def __init__(self, time, pos, rotn, dof, frame, bounces): #rotn (x axis, y axis)
         self.point = None
-        self.w, self.h = (640, 480)
+        self.w, self.h = (640, 240)
         self.ray_dirs = None
         self.screen_coords = None
         self.time = time
@@ -309,7 +309,7 @@ class MeshObject(Object):
         super().__init__(position, frame, diffuse, mirror=mirror)
         self.m = mesh
         self.m.translate(position)
-        self.chunksize = 50
+        self.chunksize = 80
 
     def intersect(self, source, direction):
         m = self.m
