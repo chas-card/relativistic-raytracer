@@ -299,7 +299,8 @@ class MeshObject(Object):
         eijk[0, 2, 1] = eijk[2, 1, 0] = eijk[1, 0, 2] = -1
 
         done_size = 0
-        path = None
+        path1 = None
+        path2 = None
         for i in range(N):
             curr_size = meshN_chunks[i].shape[0]
             intersectLens = np.einsum("at,tb->ab", meshN_chunks[i], direction)
@@ -315,22 +316,28 @@ class MeshObject(Object):
 
             edge = (v1_chunks[i] - v0_chunks[i])
             vp = P - v0_chunks[i][:, np.newaxis, :]
-            if path is None:
-                path = np.einsum_path('ijk,uj,uvk->uvi', eijk, edge, vp, optimize='optimal')[0]
-            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+            if path1 is None:
+                path_info = np.einsum_path("ijk,uj,uvk->uvi", eijk, edge, vp, optimize='optimal')
+                path1 = path_info[0]
+                #print(path_info[1])
+            C = np.einsum("ijk,uj,uvk->uvi", eijk, edge, vp, optimize=path1)
+            if path2 is None:
+                path_info = np.einsum_path("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+                path2 = path_info[0]
+                #print(path_info[1])
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize=path2)
             t = np.where(d < 0, FARAWAY, t)
 
             edge = (v2_chunks[i] - v1_chunks[i])
             vp = P - v1_chunks[i][:, np.newaxis, :]
-            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+            C = np.einsum("ijk,uj,uvk->uvi", eijk, edge, vp, optimize=path1)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize=path2)
             t = np.where(d < 0, FARAWAY, t)
 
             edge = (v0_chunks[i] - v2_chunks[i])
             vp = P - v2_chunks[i][:, np.newaxis, :]
-            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+            C = np.einsum("ijk,uj,uvk->uvi", eijk, edge, vp, optimize=path1)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize=path2)
             t = np.where(d < 0, FARAWAY, t)
 
             min_t = np.min(t, axis=0)
@@ -417,7 +424,7 @@ class MeshObject(Object):
 
 
 # testing
-
+"""
 f0=Frame([0,0,0])
 f1=Frame([-7.99,0,0],f0)
 f2=Frame([.8*c,0,0],f1)
@@ -434,4 +441,4 @@ color = scene.tracescene()
 
 Image.merge("RGB",
     [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
-).show()
+).show()"""
