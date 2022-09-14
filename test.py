@@ -28,7 +28,7 @@ print(direction.shape)
 print(np.repeat(source[:, np.newaxis], direction.shape[1], axis=1).shape)
 
 t1s = process_time()
-arr1, n1 = obj.intersect_old(np.repeat(source[:, np.newaxis], direction.shape[1], axis=1), direction)
+arr1, n1 = obj.chas_intersect(np.repeat(source[:, np.newaxis], direction.shape[1], axis=1), direction)
 t1e = process_time()
 
 t2s = process_time()

@@ -1,4 +1,5 @@
 from PIL import Image
+from stl import mesh
 import numpy as np
 import math
 
@@ -70,7 +71,7 @@ class Frame:
 # TODO: make screen class work for arbitratily defined screen coords
 class Screen:
     def __init__(self, res, time, frame):
-        x,y,z,depth = 0,10,-5,10
+        x,y,z,depth = 0,50,-50,10
         self.point = np.array((time*c,x,y,z), dtype=np_type)
         self.frame = frame
 
@@ -83,8 +84,8 @@ class Screen:
         
         # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
         #  are all the same time?
-        theta = np.pi/12
-        rotmat = np.array([[1,0,0,0],[0,1,0,0],[0,0,np.cos(theta),-np.sin(theta)],[0,0,np.sin(theta),np.cos(theta)]])
+        theta, sigma = -np.pi/6, np.pi/12
+        rotmat = np.array([[1,0,0,0],[0,np.cos(sigma),0,np.sin(sigma)],[0,0,1,0],[0,-np.sin(sigma),0,np.cos(sigma)]]) @ np.array([[1,0,0,0],[0,1,0,0],[0,0,np.cos(theta),np.sin(theta)],[0,0,-np.sin(theta),np.cos(theta)]]) 
         self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0) + self.point[:,np.newaxis]
         self.point += rotmat @ np.array([0,0,0,-depth])
 
@@ -128,7 +129,6 @@ class Scene:
                 distsc = np.compress(hit, d)
                 dirsc = np.compress(hit, dirs,axis=1)
                 normsc = np.compress(hit, n, axis=1)
-                print(np.shape(dirsc),np.shape(distsc),np.shape(normsc),"aaa")
                 colorc = s.light_frame(sourcec, dirsc, distsc, normsc, frame, self, bounce)
                 ret = np.zeros((*hit.shape,3))
                 for i in range(3):
@@ -227,7 +227,6 @@ class Object:
         n4d = np.concatenate(([time], nudged), axis=0) #TODO
         distsl = [s.intersect_frame(n4d,tol,self.frame)[0] for s in scene.objs]
         nearl = np.amin(distsl,axis=0)
-        print(self,distsl[0],distsl[1],distsl[1] == nearl)
         seelight = distsl[scene.objs.index(self)] >1e30
 
         color = np.array([[.05]*3]*len(dists))
@@ -269,6 +268,11 @@ class SphereObject(Object):
     #def light(self, source, dirs, dists, norms, scene, bounce):
         #return np.full((dirs.shape[1],3), self.diffuseColor(None))    # default return all black
 
+class CheckeredSphereObject(SphereObject):
+    def diffusecolor(self, M):
+        print(M)
+        checker = ((M[0] * 2).astype(int) % 2) == ((M[2] * 2).astype(int) % 2)
+        return self.diffuse * checker
 
 class MeshObject(Object):
     def __init__(self, position, frame, mesh, diffuse, mirror=0.5):
@@ -348,7 +352,7 @@ class MeshObject(Object):
             N_overall += sel_n
             t_overall = np.where(min_t < t_overall, min_t, t_overall)
 
-        return t_overall, N_overall
+        return t_overall, N_overall.T
 
     def chas_intersect(self, source, direction):
         # TODO: TEST IF WORKS
@@ -424,21 +428,22 @@ class MeshObject(Object):
 
 
 # testing
-"""
+
 f0=Frame([0,0,0])
 f1=Frame([-7.99,0,0],f0)
-f2=Frame([.8*c,0,0],f1)
+f2=Frame([.8*c,0,0],f0)
 f3=Frame([-.8*c,0,0],f2)
 
 cam = Screen(None,0,f0)
-sphere = SphereObject(np.array((200,.6,1)),f1,np.array((0,1,1)),.6)
-sphere2 = SphereObject(np.array((1,.8,1)),f0,np.array((1,1,0)),.6)
-#s1 = MeshObject(np.array((-5,4,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
-s2 = SphereObject(np.array((0,-90001,0)),f0,np.array((1,0,0)),90000)
-s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
-scene = Scene(cam, np.array((30, 100, -30)), [s2,s3,sphere,sphere2])
+sphere = SphereObject(np.array((200,.6-100,1)),f1,np.array((0,1,1)),.6)
+sphere2 = SphereObject(np.array((1,.8-100,1)),f0,np.array((1,1,0)),.6)
+s1 = MeshObject(np.array((-5,4-100,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
+s2 = CheckeredSphereObject(np.array((0,-90001-100,0)),f0,np.array((1,0,0)),90000)
+s3 = SphereObject(np.array((2,5-100,1)),f0,np.array((0,0,1)),3)
+s4 = MeshObject(np.array((200,4-100,200)),f2,mesh.Mesh.from_file('models/block100.stl'),np.array((0,.5,0)))
+scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,s4,sphere,sphere2])
 color = scene.tracescene()
 
 Image.merge("RGB",
     [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
-).show()"""
+).show()
