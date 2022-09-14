@@ -503,6 +503,7 @@ def raytrace(O, D, scene, bounce=0):
 	distances = [s.intersect(O, D) for s in scene]
 	nearest = reduce(np.minimum, distances)
 	color = rgb(0, 0, 0)
+	# For each object in scene and distance of intersect rays
 	for (s, d) in zip(scene, distances):
 		# print("pew")
 		hit = (nearest != FARAWAY) & (d == nearest)

@@ -18,11 +18,11 @@ y = np.repeat(np.linspace(S[1], S[3], h), w)
 coords = np.stack((x, y, np.zeros(x.shape[0])), axis=0)
 dirs = coords - source[:, np.newaxis]
 
-m = mesh.Mesh.from_file('models/block100.stl')
+m = mesh.Mesh.from_file('models/monke.stl')
 direction = dirs
 
 frame = W.Frame((0, 0, 0))
-obj = W.MeshObject([0, 0, 0], frame, m, (0,))
+obj = W.MeshObject([0, 0, -80], frame, m, (0,))
 
 t1s = process_time()
 arr1 = obj.intersect(source, direction)

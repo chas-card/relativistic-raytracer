@@ -193,11 +193,13 @@ class Object:
         """
         Ray to Object Intersect function
 
-        :param np.ndarray source: ray source position vector | shape(3,)
+        :param np.ndarray source: ray source position vector    | shape(3,)
         :param np.ndarray direction: rays direction unit vector | shape(N,3)
-        :return: intersection distance for each ray  shape(N,)
+        :return: tuple of intersection distance for each ray    | shape(N,)
+                and intersection normals for each ray           | shape(N,3)
         """
-        return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
+        # default return array of FARAWAY (no intersect)
+        return np.full(direction.shape[1], FARAWAY), np.full(direction.shape, 0)
 
     def light(self, source, direction, d, scene, bounce):
         """
@@ -210,7 +212,8 @@ class Object:
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
         """
-        return np.full(direction.shape[1], self.diffuseColor(None))    # default return all black
+        # default return all black
+        return np.full((direction.shape[1],3), self.diffuse)
 
 
 class SphereObject(Object):
@@ -237,7 +240,7 @@ class SphereObject(Object):
         return np.where(pred, h, FARAWAY)
 
     def light(self, source, direction, d, scene, bounce):
-        return np.full((direction.shape[1],3), self.diffuseColor(None))    # default return all black
+        return np.full((direction.shape[1], 3), self.diffuse)
 
 
 class MeshObject(Object):
@@ -300,16 +303,18 @@ class MeshObject(Object):
             t_overall = np.where(min_t < t_overall, min_t, t_overall)
             print(done_size)
 
-        return t_overall - 1
+        return t_overall
 
     def intersect(self, source, direction):
-        # TODO: TEST IF WORKS
         # numpy-stl mesh get normal vectors as unit vectors
         m = self.m
         meshN = self.m.get_unit_normals()
 
         # array of intersect lengths for ALL triangles
         t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
+
+        # array of intersect normals for each triangle
+        N_overall = np.full(direction.shape, 0)
 
         direction = direction.T
         for i in range(0, len(m.v0)):
@@ -319,6 +324,7 @@ class MeshObject(Object):
             N = meshN[i]
 
             # INTERSECT TRIANGLE PLANE =================================
+
             # compute intersect lengths to plane
             intersectLens = direction.dot(N)
             # Check if ray and plane are parallel
@@ -330,7 +336,10 @@ class MeshObject(Object):
             t = np.where(t < 0, FARAWAY, t)
             # intersection point(s) (individual vectors) using equation
             P = source + direction * t[:,np.newaxis]
+
             # END INTERSECT TRIANGLE PLANE =============================
+
+
 
             # CHECK INSIDE/OUTSIDE =====================================
             # whether intersect point within triangle area
@@ -352,13 +361,23 @@ class MeshObject(Object):
 
             # END CHECK INSIDE/OUTSIDE =================================
 
-            # Get closest distances
-            t_overall = np.where(t < t_overall, t, t_overall)
+            # array of whether t < t_overall
+            tLess_bool = t < t_overall
 
-        return t_overall - 1
+            # Get closest distances
+            t_overall = np.where(tLess_bool, t, t_overall)
+
+            # Add normals to N_overall (only if t was closer)
+            tLess_bool_wrapped = tLess_bool.reshape((1,len(tLess_bool)))
+            N_overall = np.where(np.repeat(tLess_bool_wrapped, 3, axis=0).T , N, N_overall)
+
+        return t_overall, N_overall
 
     def light(self, source, direction, d, scene, bounce):
-        return np.full(direction.shape[1], np.array([0,0,0]))    # default return all black
+        # M = (source + direction * d) # intersection point
+        # N =
+
+        return np.full(direction.shape[1], self.diffuse)    # default return all black
 
 
 
