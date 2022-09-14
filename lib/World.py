@@ -1,3 +1,4 @@
+from array import array
 from PIL import Image
 import numpy as np
 import math
@@ -71,10 +72,10 @@ class Frame:
 
 # Screen class acts as the camera from which rays are projected
 # TODO: make screen class work for arbitratily defined screen coords
-class Screen:
+class Camera:
     def __init__(self, time, pos, rotn, dof, frame, bounces):
         x,y,z = pos
-        self.point = np.array((time*c,x,y,z), dtype=np_type)
+        self.point = np.array((time*c,x,y,z+dof), dtype=np_type)
         self.frame = frame
         self.bounces = bounces
 
@@ -95,24 +96,24 @@ class Screen:
         self.ray_dirs = norm((self.screen_coords - self.point[:,np.newaxis])[1:])
 
     # get the "eye" point in any other frame
-    def get_point_in_frame(self, toframe):
-        lt = self.frame.compute_lt_to_frame(toframe)
-        return np.matmul(lt, self.point)
+    # def get_point_in_frame(self, toframe):
+    #     lt = self.frame.compute_lt_to_frame(toframe)
+    #     return np.matmul(lt, self.point)
 
-    def get_point_from_frame(self, fromframe):
-        lt = self.frame.compute_lt_from_frame(fromframe)
-        return np.matmul(lt, self.point)
+    # def get_point_from_frame(self, fromframe):
+    #     lt = self.frame.compute_lt_from_frame(fromframe)
+    #     return np.matmul(lt, self.point)
 
-    # get the coords of the screen in any other frame
-    def get_screen_coords_in_frame(self, toframe):
-        lt = self.frame.compute_lt_to_frame(toframe)
-        return np.matmul(lt, self.screen_coords)
+    # # get the coords of the screen in any other frame
+    # def get_screen_coords_in_frame(self, toframe):
+    #     lt = self.frame.compute_lt_to_frame(toframe)
+    #     return np.matmul(lt, self.screen_coords)
 
-    # get the projected ray directions from any other frame (3D vector!)
-    # TODO: check this (not sure whether it is ok to discard time info for the coord points)
-    def get_ray_dirs_in_frame(self, toframe):
-        lt = self.frame.compute_lt_to_frame(toframe)
-        return lt_velo(lt, self.ray_dirs*c)/c
+    # # get the projected ray directions from any other frame (3D vector!)
+    # # TODO: check this (not sure whether it is ok to discard time info for the coord points)
+    # def get_ray_dirs_in_frame(self, toframe):
+    #     lt = self.frame.compute_lt_to_frame(toframe)
+    #     return lt_velo(lt, self.ray_dirs*c)/c
 
 
 class Scene:
@@ -122,9 +123,11 @@ class Scene:
         self.objs = objs
     
     def raytrace(self, source, dirs, frame, bounce=0):
-        dists, norms = zip(*[s.intersect_frame(source, dirs, frame) for s in self.objs]) # (objects) x (screen dims)
+        res = [s.intersect_frame(source, dirs, frame) for s in self.objs]
+        color = np.zeros((np.shape(source)[1],3))
+        if (not res): return color
+        dists, norms = zip(*res) # (objects) x (screen dims)
         nearest = np.amin(dists, axis=0)
-        color = np.array(np.zeros((*nearest.shape,3)))
         for (s, d, n) in zip(self.objs, dists, norms):
             print("Bounce "+str(bounce)+" of "+str(self.camera.bounces)+": Raytracing object "+str(s))
             hit = (nearest < 1e30) & (d == nearest)
@@ -175,7 +178,7 @@ class Object:
         (dists, norms) = self.intersect(pos, dirs)
         
         v4 = np.concatenate(([time-(dists/c)],pos+(dirs*dists)),axis=0)
-        return (np.sqrt(np.sum(np.square((frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1)), norms)
+        return (np.sqrt(np.sum(np.square(((frame.compute_lt_from_frame(self.frame) @ v4)[1:]-pos).T), axis=1)), norms)
 
     def light_frame(self, source, dirs, dists, norms, frame, scene, bounce):
         """
@@ -189,7 +192,7 @@ class Object:
         time, pos = pt[0], pt[1:]
         
         v4 = np.concatenate(([time],pos+(dirs*dists)),axis=0)
-        dists = np.sqrt(np.sum(np.square((lt @ v4)[1:].T), axis=1))
+        dists = np.sqrt(np.sum((np.square((lt @ v4)[1:]-pos).T), axis=1))
         
         return self.light(pt, dirs, dists, norms, scene, bounce)
 
@@ -244,7 +247,7 @@ class Object:
 
         if bounce<scene.camera.bounces:
             nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j",dirs,norms))
-            color += scene.raytrace(n4d, nray, self.frame, bounce+1) * self.mirror
+            #color += scene.raytrace(n4d, nray, self.frame, bounce+1) * self.mirror
 
         phong = np.einsum("ij,ij->j",norms, norm(tol+toc))
         color += np.outer((np.power(np.clip(phong, 0, 1), 50) * seelight),np.ones(3))
@@ -262,9 +265,9 @@ class SphereObject(Object):
 
     def intersect(self, source, direction): # this is refactored and likely broken btw just check
         b = 2 * np.einsum("ij,ij->j", direction, source - self.position[:,np.newaxis])
-        c = np.sum(np.square(self.position),axis=0) + np.sum(np.square(source),axis=0) - 2 * np.dot(self.position, source) - (self.radius ** 2)
+        c = np.sum(np.square(self.position)) + np.sum(np.square(source),axis=0) - 2 * np.dot(self.position, source) - (self.radius ** 2)
 
-        disc = (b ** 2) - (4 * c)
+        disc = np.square(b) - (4 * c)
         sq = np.sqrt(np.maximum(0, disc))
         h0 = (-b - sq) / 2
         h1 = (-b + sq) / 2
