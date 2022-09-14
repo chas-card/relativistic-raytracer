@@ -70,19 +70,24 @@ class Frame:
 # TODO: make screen class work for arbitratily defined screen coords
 class Screen:
     def __init__(self, res, time, frame):
-        self.point = np.array((time*c, 0, 1, -10), dtype=np_type)
+        x,y,z,depth = 0,10,-5,10
+        self.point = np.array((time*c,x,y,z), dtype=np_type)
         self.frame = frame
 
         self.w, self.h = w, h = (640, 480)
         r = float(w) / h
         # Screen coordinates: x0, y0, x1, y1.
-        S = 10 * np.array((-1, 1 / r + .25, 1, -1 / r + .25))
+        S = 10 * np.array((-1, 1 / r, 1, -1 / r))
         x = np.tile(np.linspace(S[0], S[2], w), h)
         y = np.repeat(np.linspace(S[1], S[3], h), w)
-
+        
         # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
         #  are all the same time?
-        self.screen_coords = np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0)
+        theta = np.pi/12
+        rotmat = np.array([[1,0,0,0],[0,1,0,0],[0,0,np.cos(theta),-np.sin(theta)],[0,0,np.sin(theta),np.cos(theta)]])
+        self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0) + self.point[:,np.newaxis]
+        self.point += rotmat @ np.array([0,0,0,-depth])
+
         self.ray_dirs = norm((self.screen_coords - self.point[:,np.newaxis])[1:])
 
     # get the "eye" point in any other frame
@@ -161,7 +166,7 @@ class Object:
         time, pos = pt[0], pt[1:]
         (dists, norms) = self.intersect(pos, dirs)
         
-        v4 = np.concatenate((np.array([time-(dists/c)]),pos+(dirs*dists)),axis=0)
+        v4 = np.concatenate(([time-(dists/c)],pos+(dirs*dists)),axis=0)
         return (np.sqrt(np.sum(np.square((frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1)), norms)
 
     def light_frame(self, source, dirs, dists, norms, frame, scene, bounce):
@@ -175,12 +180,10 @@ class Object:
         pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
         time, pos = pt[0], pt[1:]
         
-        print(np.shape(dirs),np.shape(dists),np.shape(pos))
-        v4 = np.concatenate(([time],np.einsum("ij,j->ij",dirs,dists)-pos),axis=0)
-        print(np.shape(v4))
+        v4 = np.concatenate(([time],pos+(dirs*dists)),axis=0)
         dists = np.sqrt(np.sum(np.square((lt @ v4)[1:].T), axis=1))
         
-        return self.light(pos, dirs, dists, norms, scene, bounce)
+        return self.light(pt, dirs, dists, norms, scene, bounce)
 
     def diffuseColor(self, M):
         """
@@ -421,12 +424,12 @@ f2=Frame([.8*c,0,0],f1)
 f3=Frame([-.8*c,0,0],f2)
 
 cam = Screen(None,0,f0)
-sphere = SphereObject(np.array((200,.1,1)),f1,np.array((0,1,1)),.6)
-sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((1,1,0)),.6)
+sphere = SphereObject(np.array((200,.6,1)),f1,np.array((0,1,1)),.6)
+sphere2 = SphereObject(np.array((1,.8,1)),f0,np.array((1,1,0)),.6)
 #s1 = MeshObject(np.array((-5,4,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
 s2 = SphereObject(np.array((0,-90001,0)),f0,np.array((1,0,0)),90000)
 s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
-scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,sphere,sphere2])
+scene = Scene(cam, np.array((30, 100, -30)), [s2,s3,sphere,sphere2])
 color = scene.tracescene()
 
 Image.merge("RGB",
