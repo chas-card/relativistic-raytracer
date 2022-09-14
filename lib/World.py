@@ -71,29 +71,43 @@ class Frame:
         return "Frame with velocity "+str(self.velocity)+" wrt "+str(self.ref)
 
 # Screen class acts as the camera from which rays are projected
-# TODO: make screen class work for arbitratily defined screen coords
 class Camera:
     def __init__(self, time, pos, rotn, dof, frame, bounces):
-        x,y,z = pos
-        self.point = np.array((time*c,x,y,z+dof), dtype=np_type)
+        self.point = None
+        self.w, self.h = (640, 480)
+        self.ray_dirs = None
+        self.screen_coords = None
+        self.time = time
+        self.pos = pos
+        self.rotn = rotn
+        self.dof = dof
         self.frame = frame
         self.bounces = bounces
+        self.calc_rays()
 
-        self.w, self.h = w, h = (640, 480)
-        r = float(w) / h
+    def calc_rays(self):
+        x, y, z = self.pos
+        self.point = np.array((self.time * c, x, y, z + self.dof), dtype=np_type)
+
+        r = float(self.w) / self.h
         # Screen coordinates: x0, y0, x1, y1.
         S = 10 * np.array((-1, 1 / r, 1, -1 / r))
-        x = np.tile(np.linspace(S[0], S[2], w), h)
-        y = np.repeat(np.linspace(S[1], S[3], h), w)
-        
-        # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
-        #  are all the same time?
-        sigma, theta = rotn
-        rotmat = np.array([[1,0,0,0],[0,np.cos(sigma),0,np.sin(sigma)],[0,0,1,0],[0,-np.sin(sigma),0,np.cos(sigma)]]) @ np.array([[1,0,0,0],[0,1,0,0],[0,0,np.cos(theta),np.sin(theta)],[0,0,-np.sin(theta),np.cos(theta)]]) 
-        self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0) + self.point[:,np.newaxis]
-        self.point += rotmat @ np.array([0,0,0,-dof])
+        x = np.tile(np.linspace(S[0], S[2], self.w), self.h)
+        y = np.repeat(np.linspace(S[1], S[3], self.h), self.w)
 
-        self.ray_dirs = norm((self.screen_coords - self.point[:,np.newaxis])[1:])
+        sigma, theta = self.rotn
+        rotmat = np.array([[1, 0, 0, 0], [0, np.cos(sigma), 0, np.sin(sigma)], [0, 0, 1, 0],
+                           [0, -np.sin(sigma), 0, np.cos(sigma)]]) @ np.array(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, np.cos(theta), np.sin(theta)], [0, 0, -np.sin(theta), np.cos(theta)]])
+        self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), self.time * c), x, y, np.zeros(x.shape[0])),
+                                               axis=0) + self.point[:, np.newaxis]
+        self.point += rotmat @ np.array([0, 0, 0, -self.dof])
+
+        self.ray_dirs = norm((self.screen_coords - self.point[:, np.newaxis])[1:])
+
+    def set_time(self, t):
+        self.time = t
+        self.calc_rays()
 
     # get the "eye" point in any other frame
     # def get_point_in_frame(self, toframe):
@@ -209,8 +223,8 @@ class Object:
         """
         Ray to Object Intersect function
 
-        :param np.ndarray source: ray source position vector | shape(3,)
-        :param np.ndarray direction: rays direction unit vector | shape(N,3)
+        :param np.ndarray source: ray source position vector | shape(3, N)
+        :param np.ndarray direction: rays direction unit vector | shape(3, N)
         :return: intersection distance for each ray  shape(N,)
         """
         return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
@@ -219,8 +233,8 @@ class Object:
         """
         Recursive raytrace function
 
-        :param np.ndarray source: ray source position vector | shape(3,)
-        :param np.ndarray dirs: rays direction unit vector | shape(N,3)
+        :param np.ndarray source: ray source position vector | shape(3, N)
+        :param np.ndarray dirs: rays direction unit vector | shape(3, N)
         :param np.ndarray dists: ray intersect distances | shape(N,)
         :param np.ndarray norms: object-frame face normals | shape(N,)
         :param scene: array of Object instances
