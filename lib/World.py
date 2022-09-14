@@ -1,5 +1,4 @@
 from PIL import Image
-from stl import mesh
 import numpy as np
 import math
 
@@ -67,13 +66,17 @@ class Frame:
     def compute_lt_from_frame(self, frame):
         return np.matmul(self.from_world_lt, frame.to_world_lt)
 
+    def __str__(self):
+        return "Frame with velocity "+str(self.velocity)+" wrt "+str(self.ref)
+
 # Screen class acts as the camera from which rays are projected
 # TODO: make screen class work for arbitratily defined screen coords
 class Screen:
-    def __init__(self, res, time, frame):
-        x,y,z,depth = 0,50,-50,10
+    def __init__(self, time, pos, rotn, dof, frame, bounces):
+        x,y,z = pos
         self.point = np.array((time*c,x,y,z), dtype=np_type)
         self.frame = frame
+        self.bounces = bounces
 
         self.w, self.h = w, h = (640, 480)
         r = float(w) / h
@@ -84,10 +87,10 @@ class Screen:
         
         # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
         #  are all the same time?
-        theta, sigma = -np.pi/6, np.pi/12
+        sigma, theta = rotn
         rotmat = np.array([[1,0,0,0],[0,np.cos(sigma),0,np.sin(sigma)],[0,0,1,0],[0,-np.sin(sigma),0,np.cos(sigma)]]) @ np.array([[1,0,0,0],[0,1,0,0],[0,0,np.cos(theta),np.sin(theta)],[0,0,-np.sin(theta),np.cos(theta)]]) 
         self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0) + self.point[:,np.newaxis]
-        self.point += rotmat @ np.array([0,0,0,-depth])
+        self.point += rotmat @ np.array([0,0,0,-dof])
 
         self.ray_dirs = norm((self.screen_coords - self.point[:,np.newaxis])[1:])
 
@@ -123,6 +126,7 @@ class Scene:
         nearest = np.amin(dists, axis=0)
         color = np.array(np.zeros((*nearest.shape,3)))
         for (s, d, n) in zip(self.objs, dists, norms):
+            print("Bounce "+str(bounce)+" of "+str(self.camera.bounces)+": Raytracing object "+str(s))
             hit = (nearest < 1e30) & (d == nearest)
             if np.any(hit):
                 sourcec = np.compress(hit, source, axis=1)
@@ -138,6 +142,10 @@ class Scene:
 
     def tracescene(self):
         return self.raytrace(np.array([self.camera.point]*np.shape(self.camera.ray_dirs)[1]).T,self.camera.ray_dirs,self.camera.frame,bounce=0)
+
+    def render(self):
+        return Image.merge("RGB", [Image.fromarray((255 * np.clip(c, 0, 1).reshape((self.camera.h, self.camera.w))).astype(np.uint8), "L") for c in self.tracescene().T]
+        )
 class Object:
 
     def __init__(self, position, frame, diffuse, mirror=0.8):
@@ -234,7 +242,7 @@ class Object:
         lv = np.maximum(np.einsum("ij,ij->j",norms,tol),0)
         color+=np.outer((lv * seelight),self.diffuseColor(pts))
 
-        if bounce<2:
+        if bounce<scene.camera.bounces:
             nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j",dirs,norms))
             color += scene.raytrace(n4d, nray, self.frame, bounce+1) * self.mirror
 
@@ -244,6 +252,8 @@ class Object:
         return color
         #return np.full(direction.shape[1], self.diffuseColor(None))    # default return all black
 
+    def __str__(self):
+        return self.__class__.__name__+" at position "+str(self.position)+" with color "+str(self.diffuse)+" in frame: "+str(self.frame)
 
 class SphereObject(Object):
     def __init__(self, position, frame, diffuse, radius):
@@ -424,26 +434,3 @@ class MeshObject(Object):
 
     #def light(self, source, dirs, dists, norms, scene, bounce):
         #return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
-
-
-
-# testing
-
-f0=Frame([0,0,0])
-f1=Frame([-7.99,0,0],f0)
-f2=Frame([.8*c,0,0],f0)
-f3=Frame([-.8*c,0,0],f2)
-
-cam = Screen(None,0,f0)
-sphere = SphereObject(np.array((200,.6-100,1)),f1,np.array((0,1,1)),.6)
-sphere2 = SphereObject(np.array((1,.8-100,1)),f0,np.array((1,1,0)),.6)
-s1 = MeshObject(np.array((-5,4-100,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
-s2 = CheckeredSphereObject(np.array((0,-90001-100,0)),f0,np.array((1,0,0)),90000)
-s3 = SphereObject(np.array((2,5-100,1)),f0,np.array((0,0,1)),3)
-s4 = MeshObject(np.array((200,4-100,200)),f2,mesh.Mesh.from_file('models/block100.stl'),np.array((0,.5,0)))
-scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,s4,sphere,sphere2])
-color = scene.tracescene()
-
-Image.merge("RGB",
-    [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
-).show()
