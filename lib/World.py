@@ -156,7 +156,6 @@ class Object:
         :return:
         """
         lt = frame.compute_lt_to_frame(self.frame)
-        print(source)
         pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
 
         time, pos = pt[0], pt[1:]
@@ -171,7 +170,6 @@ class Object:
         :param screen:
         :return:
         """
-        print("ping!")
         lt = frame.compute_lt_to_frame(self.frame)
 
         pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
@@ -197,12 +195,9 @@ class Object:
         """
         Ray to Object Intersect function
 
-        :param np.ndarray source: ray source position vector    | shape(3,N)
+        :param np.ndarray source: ray source position vector | shape(3,)
         :param np.ndarray direction: rays direction unit vector | shape(N,3)
-        :return: tuple with (
-            intersection distance for each ray          | shape(N,)
-            intersection normals for each ray           | shape(N,3)
-            )
+        :return: intersection distance for each ray  shape(N,)
         """
         return np.full(direction.shape[1], FARAWAY)		# default return array of FARAWAY (no intersect)
 
@@ -210,7 +205,7 @@ class Object:
         """
         Recursive raytrace function
 
-        :param np.ndarray source: ray source position vector | shape(N,3)
+        :param np.ndarray source: ray source position vector | shape(3,)
         :param np.ndarray dirs: rays direction unit vector | shape(N,3)
         :param np.ndarray dists: ray intersect distances | shape(N,)
         :param np.ndarray norms: object-frame face normals | shape(N,)
@@ -218,23 +213,26 @@ class Object:
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
         """
-        print(np.shape(dirs*dists))
-        pts = source + dirs*(dists.T)
+        time = source[0] - dists/c
+        pts = source[1:] + dirs*(dists.T)
         tol = norm(scene.light[:,np.newaxis] - pts)
-        toc = norm(source - pts)
-        nudged = pts + norms*.0001
+        toc = norm(scene.camera.point[1:][:,np.newaxis] - pts)
+        nudged = pts + norms*.0001    # default return all black
 
-        n4d = np.concatenate((np.array([np.zeros(np.shape(nudged)[1])]), nudged), axis=0) #TODO
+        #return np.array([self.diffuseColor(pts)]*len(dists))
+
+        n4d = np.concatenate(([time], nudged), axis=0) #TODO
         distsl = [s.intersect_frame(n4d,tol,self.frame)[0] for s in scene.objs]
         nearl = np.amin(distsl,axis=0)
-        seelight = distsl[scene.objs.index(self)] == nearl
+        print(self,distsl[0],distsl[1],distsl[1] == nearl)
+        seelight = distsl[scene.objs.index(self)] >1e30
 
         color = np.array([[.05]*3]*len(dists))
 
         lv = np.maximum(np.einsum("ij,ij->j",norms,tol),0)
         color+=np.outer((lv * seelight),self.diffuseColor(pts))
 
-        if bounce<1:
+        if bounce<2:
             nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j",dirs,norms))
             color += scene.raytrace(n4d, nray, self.frame, bounce+1) * self.mirror
 
@@ -260,7 +258,6 @@ class SphereObject(Object):
         h1 = (-b + sq) / 2
         h = np.where((h0 > 0) & (h0 < h1), h0, h1)
         pred = (disc > 0) & (h > 0)
-        print(np.shape(source),np.shape(self.position),np.shape(h),np.shape(direction.T))
         return (
             np.where(pred, h, FARAWAY), 
             np.where(pred[np.newaxis,:], (source-self.position[:,np.newaxis]+np.einsum("ij,j->ij",direction,h)) / self.radius, np.zeros(np.shape(direction)))
@@ -343,7 +340,7 @@ class MeshObject(Object):
 
         return t_overall, N_overall
 
-    def old_intersect(self, source, direction):
+    def chas_intersect(self, source, direction):
         # TODO: TEST IF WORKS
         # numpy-stl mesh get normal vectors as unit vectors
         m = self.m
@@ -397,6 +394,8 @@ class MeshObject(Object):
 
             # END CHECK INSIDE/OUTSIDE =================================
 
+            # Get closest distances
+            t_overall = np.where(t < t_overall, t, t_overall)
             # array of whether t < t_overall
             tLess_bool = t < t_overall
 
@@ -408,3 +407,28 @@ class MeshObject(Object):
             N_overall = np.where(tLess_bool_broadcast, N, N_overall)
 
         return (t_overall, N_overall)
+
+    #def light(self, source, dirs, dists, norms, scene, bounce):
+        #return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
+
+
+
+# testing
+
+f0=Frame([0,0,0])
+f1=Frame([-7.99,0,0],f0)
+f2=Frame([.8*c,0,0],f1)
+f3=Frame([-.8*c,0,0],f2)
+
+cam = Screen(None,0,f0)
+sphere = SphereObject(np.array((200,.1,1)),f1,np.array((0,1,1)),.6)
+sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((1,1,0)),.6)
+#s1 = MeshObject(np.array((-5,4,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
+s2 = SphereObject(np.array((0,-90001,0)),f0,np.array((1,0,0)),90000)
+s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
+scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,sphere,sphere2])
+color = scene.tracescene()
+
+Image.merge("RGB",
+    [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
+).show()
