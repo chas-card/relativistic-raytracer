@@ -282,44 +282,50 @@ class MeshObject(Object):
         t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
         polygons = meshN.shape[0]
-        N = math.ceil(polygons/self.chunksize)
+        N = math.ceil(polygons / self.chunksize)
 
-        chunks = [min((i+1)*self.chunksize, polygons) for i in range(N)]
+        chunks = [min((i + 1) * self.chunksize, polygons) for i in range(N)]
         print(chunks)
         meshN_chunks = np.array_split(meshN, chunks, axis=0)
         v0_chunks = np.array_split(m.v0, chunks, axis=0)
         v1_chunks = np.array_split(m.v1, chunks, axis=0)
         v2_chunks = np.array_split(m.v2, chunks, axis=0)
 
+        eijk = np.zeros((3, 3, 3))
+        eijk[0, 1, 2] = eijk[1, 2, 0] = eijk[2, 0, 1] = 1
+        eijk[0, 2, 1] = eijk[2, 1, 0] = eijk[1, 0, 2] = -1
+
         done_size = 0
+        path = None
         for i in range(N):
             curr_size = meshN_chunks[i].shape[0]
             intersectLens = np.einsum("at,tb->ab", meshN_chunks[i], direction)
 
-            if intersectLens.all() == 0:
-                continue # no intersects
+            intersectLens = np.where(intersectLens == 0, 1/FARAWAY, intersectLens)
 
-            t = np.einsum("a,ab->ab", np.einsum("at,at->a", (v0_chunks[i] - source), meshN_chunks[i]), np.reciprocal(intersectLens))
+            t = np.einsum("ab,ab->ab", np.einsum("abt,at->ab", (v0_chunks[i][:, np.newaxis, :] - source.T[np.newaxis, :, :]), meshN_chunks[i]), np.reciprocal(intersectLens))
             t = np.where(t < 0, FARAWAY, t)
 
-            P = source + np.einsum("ab,cb->cba", direction, t)
+            P = source.T[np.newaxis] + np.einsum("ab,cb->cba", direction, t)
 
-            edge = (v1_chunks[i] - v0_chunks[i])[:, np.newaxis, :]
+            edge = (v1_chunks[i] - v0_chunks[i])
             vp = P - v0_chunks[i][:, np.newaxis, :]
-            C = np.cross(edge, vp)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
+            if path is None:
+                path = np.einsum_path('ijk,uj,uvk->uvi', eijk, edge, vp, optimize='optimal')[0]
+            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
             t = np.where(d < 0, FARAWAY, t)
 
-            edge = (v2_chunks[i] - v1_chunks[i])[:, np.newaxis, :]
+            edge = (v2_chunks[i] - v1_chunks[i])
             vp = P - v1_chunks[i][:, np.newaxis, :]
-            C = np.cross(edge, vp)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
+            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
             t = np.where(d < 0, FARAWAY, t)
 
-            edge = (v0_chunks[i] - v2_chunks[i])[:, np.newaxis, :]
+            edge = (v0_chunks[i] - v2_chunks[i])
             vp = P - v2_chunks[i][:, np.newaxis, :]
-            C = np.cross(edge, vp)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
+            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
             t = np.where(d < 0, FARAWAY, t)
 
             min_t = np.min(t, axis=0)
