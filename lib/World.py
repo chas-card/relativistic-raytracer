@@ -165,7 +165,6 @@ class Object:
         :return:
         """
         lt = frame.compute_lt_to_frame(self.frame)
-        print(source)
         pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
 
         time, pos = pt[0], pt[1:]
@@ -180,7 +179,6 @@ class Object:
         :param screen:
         :return:
         """
-        print("ping!")
         lt = frame.compute_lt_to_frame(self.frame)
 
         pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
@@ -222,7 +220,7 @@ class Object:
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
         """
-        time = source[0] + dists/c
+        time = source[0] - dists/c
         pts = source[1:] + dirs*(dists.T)
         tol = norm(scene.light[:,np.newaxis] - pts)
         toc = norm(scene.camera.point[1:][:,np.newaxis] - pts)
@@ -233,14 +231,15 @@ class Object:
         n4d = np.concatenate(([time], nudged), axis=0) #TODO
         distsl = [s.intersect_frame(n4d,tol,self.frame)[0] for s in scene.objs]
         nearl = np.amin(distsl,axis=0)
-        seelight = distsl[scene.objs.index(self)] == nearl
+        print(self,distsl[0],distsl[1],distsl[1] == nearl)
+        seelight = distsl[scene.objs.index(self)] >1e30
 
         color = np.array([[.05]*3]*len(dists))
 
         lv = np.maximum(np.einsum("ij,ij->j",norms,tol),0)
         color+=np.outer((lv * seelight),self.diffuseColor(pts))
 
-        if bounce<1:
+        if bounce<2:
             nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j",dirs,norms))
             color += scene.raytrace(n4d, nray, self.frame, bounce+1) * self.mirror
 
@@ -266,7 +265,6 @@ class SphereObject(Object):
         h1 = (-b + sq) / 2
         h = np.where((h0 > 0) & (h0 < h1), h0, h1)
         pred = (disc > 0) & (h > 0)
-        print(np.shape(source),np.shape(self.position),np.shape(h),np.shape(direction.T))
         return (
             np.where(pred, h, FARAWAY), 
             np.where(pred[np.newaxis,:], (source-self.position[:,np.newaxis]+np.einsum("ij,j->ij",direction,h)) / self.radius, np.zeros(np.shape(direction)))
@@ -283,7 +281,7 @@ class MeshObject(Object):
         self.m.translate(position)
         self.chunksize = 50
 
-    def np_intersect(self, source, direction):
+    def intersect(self, source, direction):
         m = self.m
         meshN = m.get_unit_normals()
 
@@ -294,7 +292,6 @@ class MeshObject(Object):
         N = math.ceil(polygons / self.chunksize)
 
         chunks = [min((i + 1) * self.chunksize, polygons) for i in range(N)]
-        print(chunks)
         meshN_chunks = np.array_split(meshN, chunks, axis=0)
         v0_chunks = np.array_split(m.v0, chunks, axis=0)
         v1_chunks = np.array_split(m.v1, chunks, axis=0)
@@ -340,11 +337,10 @@ class MeshObject(Object):
             min_t = np.min(t, axis=0)
             done_size += curr_size
             t_overall = np.where(min_t < t_overall, min_t, t_overall)
-            print(done_size)
 
         return t_overall - 1
 
-    def intersect(self, source, direction):
+    def chas_intersect(self, source, direction):
         # TODO: TEST IF WORKS
         # numpy-stl mesh get normal vectors as unit vectors
         m = self.m
@@ -415,12 +411,11 @@ cam = Screen(None,0,f0)
 sphere = SphereObject(np.array((-1,.1,1)),f2,np.array((0,1,1)),.6)
 sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((1,1,0)),.6)
 #s1 = MeshObject(np.array((-5,4,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
-s2 = SphereObject(np.array((0,-901,0)),f0,np.array((1,0,0)),900)
+s2 = SphereObject(np.array((0,-90001,0)),f0,np.array((1,0,0)),90000)
 s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
 scene = Scene(cam, np.array((30, 100, -30)), [s2,sphere,sphere2])
 color = scene.tracescene()
 
-print(f1.compute_lt_from_frame(f0) @ np.array((0,-1,.1,1)))
 Image.merge("RGB", 
     [Image.fromarray((255 * np.clip(c, 0, 1).reshape((cam.h, cam.w))).astype(np.uint8), "L") for c in color.T]
 ).show()
