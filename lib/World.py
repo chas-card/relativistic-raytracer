@@ -1,10 +1,9 @@
 from PIL import Image
-from stl import mesh
 import numpy as np
 import math
 
 np_type = np.float32
-c = 8#3e8
+c = 8 #3e8
 
 FARAWAY = 1.0e+39  # A large distance
 
@@ -71,24 +70,19 @@ class Frame:
 # TODO: make screen class work for arbitratily defined screen coords
 class Screen:
     def __init__(self, res, time, frame):
-        x,y,z,depth = 0,10,-5,10
-        self.point = np.array((time*c,x,y,z), dtype=np_type)
+        self.point = np.array((time*c, 0, 1, -10), dtype=np_type)
         self.frame = frame
 
         self.w, self.h = w, h = (640, 480)
         r = float(w) / h
         # Screen coordinates: x0, y0, x1, y1.
-        S = 10 * np.array((-1, 1 / r, 1, -1 / r))
+        S = 10 * np.array((-1, 1 / r + .25, 1, -1 / r + .25))
         x = np.tile(np.linspace(S[0], S[2], w), h)
         y = np.repeat(np.linspace(S[1], S[3], h), w)
-        
+
         # TODO: the time in this is almost definitely wrong, how do i specify a time such that after transform they
         #  are all the same time?
-        theta = np.pi/12
-        rotmat = np.array([[1,0,0,0],[0,1,0,0],[0,0,np.cos(theta),-np.sin(theta)],[0,0,np.sin(theta),np.cos(theta)]])
-        self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0) + self.point[:,np.newaxis]
-        self.point += rotmat @ np.array([0,0,0,-depth])
-
+        self.screen_coords = np.stack((np.full((x.shape[0],), time*c), x, y, np.zeros(x.shape[0])), axis=0)
         self.ray_dirs = norm((self.screen_coords - self.point[:,np.newaxis])[1:])
 
     # get the "eye" point in any other frame
@@ -129,6 +123,7 @@ class Scene:
                 distsc = np.compress(hit, d)
                 dirsc = np.compress(hit, dirs,axis=1)
                 normsc = np.compress(hit, n, axis=1)
+                print(np.shape(dirsc),np.shape(distsc),np.shape(normsc),"aaa")
                 colorc = s.light_frame(sourcec, dirsc, distsc, normsc, frame, self, bounce)
                 ret = np.zeros((*hit.shape,3))
                 for i in range(3):
@@ -137,11 +132,7 @@ class Scene:
         return color
 
     def tracescene(self):
-        return self.raytrace(
-            np.array([self.camera.point]*np.shape(self.camera.ray_dirs)[1]).T,
-            self.camera.ray_dirs,
-            self.camera.frame,
-            bounce=0)
+        return self.raytrace(np.array([self.camera.point]*np.shape(self.camera.ray_dirs)[1]).T,self.camera.ray_dirs,self.camera.frame,bounce=0)
 class Object:
 
     def __init__(self, position, frame, diffuse, mirror=0.8):
@@ -170,7 +161,7 @@ class Object:
         time, pos = pt[0], pt[1:]
         (dists, norms) = self.intersect(pos, dirs)
         
-        v4 = np.concatenate(([time-(dists/c)],pos+(dirs*dists)),axis=0)
+        v4 = np.concatenate((np.array([time-(dists/c)]),pos+(dirs*dists)),axis=0)
         return (np.sqrt(np.sum(np.square((frame.compute_lt_from_frame(self.frame) @ v4)[1:].T), axis=1)), norms)
 
     def light_frame(self, source, dirs, dists, norms, frame, scene, bounce):
@@ -184,10 +175,12 @@ class Object:
         pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
         time, pos = pt[0], pt[1:]
         
-        v4 = np.concatenate(([time],pos+(dirs*dists)),axis=0)
+        print(np.shape(dirs),np.shape(dists),np.shape(pos))
+        v4 = np.concatenate(([time],np.einsum("ij,j->ij",dirs,dists)-pos),axis=0)
+        print(np.shape(v4))
         dists = np.sqrt(np.sum(np.square((lt @ v4)[1:].T), axis=1))
         
-        return self.light(pt, dirs, dists, norms, scene, bounce)
+        return self.light(pos, dirs, dists, norms, scene, bounce)
 
     def diffuseColor(self, M):
         """
@@ -212,10 +205,10 @@ class Object:
         """
         Recursive raytrace function
 
-        :param np.ndarray source: ray source position vector | shape(4,N)
-        :param np.ndarray dirs: rays direction unit vector | shape(3,N)
+        :param np.ndarray source: ray source position vector | shape(3,)
+        :param np.ndarray dirs: rays direction unit vector | shape(N,3)
         :param np.ndarray dists: ray intersect distances | shape(N,)
-        :param np.ndarray norms: object-frame face normals | shape(3,N)
+        :param np.ndarray norms: object-frame face normals | shape(N,)
         :param scene: array of Object instances
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
@@ -289,49 +282,44 @@ class MeshObject(Object):
         t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
 
         polygons = meshN.shape[0]
-        N = math.ceil(polygons / self.chunksize)
+        N = math.ceil(polygons/self.chunksize)
 
-        chunks = [min((i + 1) * self.chunksize, polygons) for i in range(N)]
+        chunks = [min((i+1)*self.chunksize, polygons) for i in range(N)]
+        print(chunks)
         meshN_chunks = np.array_split(meshN, chunks, axis=0)
         v0_chunks = np.array_split(m.v0, chunks, axis=0)
         v1_chunks = np.array_split(m.v1, chunks, axis=0)
         v2_chunks = np.array_split(m.v2, chunks, axis=0)
 
-        eijk = np.zeros((3, 3, 3))
-        eijk[0, 1, 2] = eijk[1, 2, 0] = eijk[2, 0, 1] = 1
-        eijk[0, 2, 1] = eijk[2, 1, 0] = eijk[1, 0, 2] = -1
-
         done_size = 0
-        path = None
         for i in range(N):
             curr_size = meshN_chunks[i].shape[0]
             intersectLens = np.einsum("at,tb->ab", meshN_chunks[i], direction)
 
-            intersectLens = np.where(intersectLens == 0, 1/FARAWAY, intersectLens)
+            if intersectLens.all() == 0:
+                continue # no intersects
 
-            t = np.einsum("ab,ab->ab", np.einsum("abt,at->ab", (v0_chunks[i][:, np.newaxis, :] - source.T[np.newaxis, :, :]), meshN_chunks[i]), np.reciprocal(intersectLens))
+            t = np.einsum("a,ab->ab", np.einsum("at,at->a", (v0_chunks[i] - source), meshN_chunks[i]), np.reciprocal(intersectLens))
             t = np.where(t < 0, FARAWAY, t)
 
-            P = source.T[np.newaxis] + np.einsum("ab,cb->cba", direction, t)
+            P = source + np.einsum("ab,cb->cba", direction, t)
 
-            edge = (v1_chunks[i] - v0_chunks[i])
+            edge = (v1_chunks[i] - v0_chunks[i])[:, np.newaxis, :]
             vp = P - v0_chunks[i][:, np.newaxis, :]
-            if path is None:
-                path = np.einsum_path('ijk,uj,uvk->uvi', eijk, edge, vp, optimize='optimal')[0]
-            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+            C = np.cross(edge, vp)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
             t = np.where(d < 0, FARAWAY, t)
 
-            edge = (v2_chunks[i] - v1_chunks[i])
+            edge = (v2_chunks[i] - v1_chunks[i])[:, np.newaxis, :]
             vp = P - v1_chunks[i][:, np.newaxis, :]
-            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+            C = np.cross(edge, vp)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
             t = np.where(d < 0, FARAWAY, t)
 
-            edge = (v0_chunks[i] - v2_chunks[i])
+            edge = (v0_chunks[i] - v2_chunks[i])[:, np.newaxis, :]
             vp = P - v2_chunks[i][:, np.newaxis, :]
-            C = np.einsum('ijk,uj,uvk->uvi', eijk, edge, vp, optimize=path)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
+            C = np.cross(edge, vp)
+            d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
             t = np.where(d < 0, FARAWAY, t)
 
             min_t = np.min(t, axis=0)
@@ -404,16 +392,16 @@ class MeshObject(Object):
 
 f0=Frame([0,0,0])
 f1=Frame([-7.99,0,0],f0)
-f2=Frame([0.001,0,0],f0)
+f2=Frame([.8*c,0,0],f1)
 f3=Frame([-.8*c,0,0],f2)
 
 cam = Screen(None,0,f0)
-sphere = SphereObject(np.array((-1,.1,1)),f2,np.array((0,1,1)),.6)
+sphere = SphereObject(np.array((200,.1,1)),f1,np.array((0,1,1)),.6)
 sphere2 = SphereObject(np.array((1,.1,1)),f0,np.array((1,1,0)),.6)
 #s1 = MeshObject(np.array((-5,4,1)),f0,mesh.Mesh.from_file('models/block100.stl'),np.array((0,1,0)))
 s2 = SphereObject(np.array((0,-90001,0)),f0,np.array((1,0,0)),90000)
 s3 = SphereObject(np.array((2,5,1)),f0,np.array((0,0,1)),3)
-scene = Scene(cam, np.array((30, 100, -30)), [s2,sphere,sphere2])
+scene = Scene(cam, np.array((30, 100, -30)), [s1,s2,s3,sphere,sphere2])
 color = scene.tracescene()
 
 Image.merge("RGB", 
