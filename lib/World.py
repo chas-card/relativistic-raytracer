@@ -282,7 +282,8 @@ class MeshObject(Object):
         meshN = m.get_unit_normals()
 
         # array of intersect lengths for ALL triangles
-        t_overall = np.full(direction.shape[1], FARAWAY)  # initialize to assume all distances are FARAWAY
+        t_overall = np.full(direction.shape[1], FARAWAY, dtype=np_type)  # initialize to assume all distances are FARAWAY
+        N_overall = np.full(direction.shape, 0, dtype=np_type).T
 
         polygons = meshN.shape[0]
         N = math.ceil(polygons/self.chunksize)
@@ -325,12 +326,22 @@ class MeshObject(Object):
             d = np.einsum("ab,acb->ac", meshN_chunks[i], C)
             t = np.where(d < 0, FARAWAY, t)
 
+            print(t)
+
             min_t = np.min(t, axis=0)
             done_size += curr_size
+
+            #print((t == min_t[np.newaxis, :]).shape)
+            #print((np.where(t == min_t[np.newaxis, :], 1, 0)[:, :, np.newaxis] * meshN_chunks[i][:, np.newaxis, :]).shape)
+            print("sussy")
+            min_polygon = (t != FARAWAY) & (t == min_t[np.newaxis, :])
+            b = min_polygon[:, :, np.newaxis]
+            sel_n = np.sum(b * meshN_chunks[i][:, np.newaxis, :], axis=0)
+            N_overall += sel_n
             t_overall = np.where(min_t < t_overall, min_t, t_overall)
             print(done_size)
 
-        return t_overall
+        return t_overall, N_overall
 
     def intersect(self, source, direction):
         # TODO: TEST IF WORKS

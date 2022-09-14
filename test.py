@@ -18,20 +18,25 @@ y = np.repeat(np.linspace(S[1], S[3], h), w)
 coords = np.stack((x, y, np.zeros(x.shape[0])), axis=0)
 dirs = coords - source[:, np.newaxis]
 
-m = mesh.Mesh.from_file('C:/Users/linyi/Downloads/sphere.stl')
+m = mesh.Mesh.from_file('models/block100.stl')
 direction = dirs
 
 frame = W.Frame((0, 0, 0))
 obj = W.MeshObject([0, 0, 0], frame, m, (0,))
 
+print(direction.shape)
+print(np.repeat(source[:, np.newaxis], direction.shape[1], axis=1).shape)
+
 t1s = process_time()
-arr1 = obj.intersect(source, direction)
+arr1, n1 = obj.intersect(np.repeat(source[:, np.newaxis], direction.shape[1], axis=1), direction)
 t1e = process_time()
 
 t2s = process_time()
-arr2 = obj.np_intersect(source, direction)
+arr2, n2 = obj.np_intersect(source, direction)
 t2e = process_time()
 
-#print(np.max(np.abs(arr2 - arr1)))
+print(np.max(np.abs(arr2 - arr1)))
+print(np.max(np.abs(n2 - n1)))
+print(np.max(np.abs(n1)))
 print("time1: " + str(t1e-t1s))
 print("time2: " + str(t2e-t2s))
