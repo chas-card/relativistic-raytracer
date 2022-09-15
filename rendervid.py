@@ -2,41 +2,69 @@ from lib import World as W
 import numpy as np
 from stl import mesh
 
-from tqdm import tqdm
+from multiprocessing import Pool
 
-fp_out = "outputs/more095.gif"
+fp_out = "outputs/final/"
 
-v = 0.95
-numobjs = 14
-offset = 3400
+campos = (0, 50, -700)
+camrot = (0, -np.pi / 7)
+lpos = np.array((3000, 10000, -3000))
+frames = 50
+frame_dur = 5
 
-y = 1/np.sqrt(1-v**2)
-print(y)
 
-gap, step = np.linspace(-3000 + offset, 3000 + offset, numobjs, dtype=W.np_type, retstep=True)
-t = np.linspace(0, step/(v*W.c), 30)
-end = t[-2]
-dur = round(end/2/29)*29
-print(dur)
+def render_time(camt, f, o):
+    print(camt)
+    camera_t = W.Camera(camt, campos, camrot, 10, f, 2)
+    scene_t = W.Scene(camera_t, lpos, o)
+    return scene_t.render()
 
-f0 = W.Frame([0, 0, 0])
-f1 = W.Frame([-v * W.c, 0, 0], f0)
 
-camera = W.Camera(0, (0, 50, -700), (2*np.pi / 7, -np.pi / 7), 10, f0, 2)
+if __name__ == '__main__':
+    vrange = np.linspace(0.1, 0.9, 9)
+    print(vrange)
 
-objpos = (np.array([1, 0, 0], dtype=W.np_type)[:, np.newaxis] * gap*y).T
-objpos[:, 1] += -300
-print(objpos)
-objects = [W.MeshObject(objpos[i], f1, mesh.Mesh.from_file('models/cube_indent_100.stl'), np.array((0, 1, 0))) for i in
-           range(numobjs)]
+    f0 = W.Frame([0, 0, 0])
 
-scene = W.Scene(camera, np.array((3000, 10000, -3000)), objects)
+    camera = W.Camera(0, campos, camrot, 10, f0, 2)
 
-scene.render().show()
+    for v in vrange:
+        numobjs = 11
+        offset = 2400
 
-imgs = []
-for i in tqdm(range(t.shape[0]-1)):
-    camera.set_time(t[i])
-    imgs.append(scene.render())
+        y = 1 / np.sqrt(1 - v ** 2)
+        print(f"gamma: {y}")
 
-imgs[0].save(fp=fp_out, format='GIF', append_images=imgs, save_all=True, duration=dur, loop=0)
+        gap, step = np.linspace(-3000 + offset, 3000 + offset, numobjs, dtype=W.np_type, retstep=True)
+        tstep = step / (v * W.c)
+        print(tstep)
+        num_frames = round(tstep/frame_dur)
+        t = np.linspace(0, step / (v * W.c), num_frames, dtype=W.np_type)
+        print(t)
+        t = t[:-1:]
+        end = t[-1]
+        print(f"interval time: {end}")
+        print(f"nfames: {num_frames}")
+
+        f1 = W.Frame([-v * W.c, 0, 0], f0)
+        objpos = (np.array([1, 0, 0], dtype=W.np_type)[:, np.newaxis] * gap * y).T
+        objpos[:, 1] += -300
+        print(objpos)
+        objects = [W.MeshObject(objpos[i], f1, mesh.Mesh.from_file('models/cube_indent_100.stl'),
+                                np.array((82.0 / 255.0, 110.0 / 255.0, 235.0 / 255.0))) for i in
+                   range(numobjs)]
+
+        scene = W.Scene(camera, lpos, objects)
+
+        #scene.render().show()
+
+        args = [(t[i], f0, objects) for i in range(t.shape[0])]
+        p = Pool(processes=10)
+        imgs = p.starmap(render_time, args)
+
+        # for i in tqdm(range(t.shape[0]-1)):
+        #    camera.set_time(t[i])
+        #    imgs.append(scene.render())
+
+        imgs[0].save(fp=fp_out + f"img{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=dur,
+                     loop=0)

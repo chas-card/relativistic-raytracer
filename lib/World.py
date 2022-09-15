@@ -4,7 +4,7 @@ import numpy as np
 import math
 
 np_type = np.float32
-c = 8 #3e8
+c = 8.0 #3e8
 
 FARAWAY = 1.0e+39  # A large distance
 
@@ -97,11 +97,11 @@ class Camera:
 
         sigma, theta = self.rotn
         rotmat = np.array([[1, 0, 0, 0], [0, np.cos(sigma), 0, np.sin(sigma)], [0, 0, 1, 0],
-                           [0, -np.sin(sigma), 0, np.cos(sigma)]]) @ np.array(
-            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, np.cos(theta), np.sin(theta)], [0, 0, -np.sin(theta), np.cos(theta)]])
+                           [0, -np.sin(sigma), 0, np.cos(sigma)]], dtype=np_type) @ np.array(
+            [[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, np.cos(theta), np.sin(theta)], [0, 0, -np.sin(theta), np.cos(theta)]], dtype=np_type)
         self.screen_coords = rotmat @ np.stack((np.full((x.shape[0],), self.time * c), x, y, np.zeros(x.shape[0])),
                                                axis=0) + self.point[:, np.newaxis]
-        self.point += rotmat @ np.array([0, 0, 0, -self.dof])
+        self.point += rotmat @ np.array([0, 0, 0, -self.dof], dtype=np_type)
 
         self.ray_dirs = norm((self.screen_coords - self.point[:, np.newaxis])[1:])
 
@@ -143,7 +143,7 @@ class Scene:
         dists, norms = zip(*res) # (objects) x (screen dims)
         nearest = np.amin(dists, axis=0)
         for (s, d, n) in zip(self.objs, dists, norms):
-            print("Bounce "+str(bounce)+" of "+str(self.camera.bounces)+": Raytracing object "+str(s))
+            #print("Bounce "+str(bounce)+" of "+str(self.camera.bounces)+": Raytracing object "+str(s))
             hit = (nearest < 1e30) & (d == nearest)
             if np.any(hit):
                 sourcec = np.compress(hit, source, axis=1)
