@@ -6,10 +6,9 @@ from multiprocessing import Pool
 
 fp_out = "outputs/final/"
 
-campos = (0, 50, -700)
+campos = (0, 50, -900)
 camrot = (0, -np.pi / 7)
 lpos = np.array((3000, 10000, -3000))
-frames = 50
 frame_dur = 5
 
 
@@ -29,8 +28,8 @@ if __name__ == '__main__':
     camera = W.Camera(0, campos, camrot, 10, f0, 2)
 
     for v in vrange:
-        numobjs = 11
-        offset = 2400
+        numobjs = 8
+        offset = 1000
 
         y = 1 / np.sqrt(1 - v ** 2)
         print(f"gamma: {y}")
@@ -66,5 +65,5 @@ if __name__ == '__main__':
         #    camera.set_time(t[i])
         #    imgs.append(scene.render())
 
-        imgs[0].save(fp=fp_out + f"img_fix{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
+        imgs[0].save(fp=fp_out + f"imgg{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
                      loop=0)
