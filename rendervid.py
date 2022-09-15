@@ -66,5 +66,5 @@ if __name__ == '__main__':
         #    camera.set_time(t[i])
         #    imgs.append(scene.render())
 
-        imgs[0].save(fp=fp_out + f"img{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=dur,
+        imgs[0].save(fp=fp_out + f"img{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
                      loop=0)

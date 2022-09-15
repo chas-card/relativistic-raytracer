@@ -309,7 +309,7 @@ class MeshObject(Object):
         super().__init__(position, frame, diffuse, mirror=mirror)
         self.m = mesh
         self.m.translate(position)
-        self.chunksize = 80
+        self.chunksize = 200
 
     def intersect(self, source, direction):
         m = self.m
