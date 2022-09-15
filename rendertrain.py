@@ -10,6 +10,8 @@ camrot = (0, -np.pi / 10)
 lpos = np.array((3000, 10000, -3000))
 frame_dur = 5
 
+offset = -2000
+
 
 def render_time(camt, campos, f, o):
     print(camt)
@@ -19,19 +21,21 @@ def render_time(camt, campos, f, o):
 
 
 if __name__ == '__main__':
-    v = 0.3
+    v = 0.7
 
     f1 = W.Frame([0, 0, 0])
     f2 = W.Frame([v * W.c, 0, 0])
 
     objects = [W.MeshObject([0, 0, 0], f1, mesh.Mesh.from_file('models/tunnel_window.stl'),
                             np.array((82.0 / 255.0, 110.0 / 255.0, 235.0 / 255.0))),
-               W.MeshObject([-1500, 0, 0], f2, mesh.Mesh.from_file('models/train.stl'),
+               W.MeshObject([-2000, 0, 0], f2, mesh.Mesh.from_file('models/train.stl'),
                             np.array((82.0 / 255.0, 212.0 / 255.0, 150.0 / 255.0))),
-               W.MeshObject([100, -100, 350], f1, mesh.Mesh.from_file('models/ico50.stl'),
+               W.MeshObject([100, -60, -250], f1, mesh.Mesh.from_file('models/ico50.stl'),
+                            np.array((212.0 / 255.0, 114.0 / 255.0, 85.0 / 255.0))),
+               W.MeshObject([100, -60, -250], f1, mesh.Mesh.from_file('models/ico50.stl'),
                             np.array((212.0 / 255.0, 114.0 / 255.0, 85.0 / 255.0)))]
 
-    frames = [(f1, [0, 120, -500], "tunnel"), (f2, [-1500, 120, -500], "train")]
+    frames = [(f1, [0, 120, -500], "tunnel"), (f2, [-2000, 120, -500], "train")]
 
     for f0, campos, nm in frames:
         camera = W.Camera(0, campos, camrot, 10, f0, 2)

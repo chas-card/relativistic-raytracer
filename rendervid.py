@@ -21,7 +21,7 @@ def render_time(camt, f, o):
 
 
 if __name__ == '__main__':
-    vrange = np.linspace(0.1, 0.9, 9)
+    vrange = np.linspace(0.1, 0.9, 5)
     print(vrange)
 
     f0 = W.Frame([0, 0, 0])
@@ -66,5 +66,5 @@ if __name__ == '__main__':
         #    camera.set_time(t[i])
         #    imgs.append(scene.render())
 
-        imgs[0].save(fp=fp_out + f"img{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
+        imgs[0].save(fp=fp_out + f"img_fix{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
                      loop=0)

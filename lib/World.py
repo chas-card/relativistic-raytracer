@@ -186,12 +186,12 @@ class Object:
         :return:
         """
         lt = frame.compute_lt_to_frame(self.frame)
-        pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
+        pt, dirs = lt @ source, -lt_velo(lt, -dirs*c)/c
 
         time, pos = pt[0], pt[1:]
         (dists, norms) = self.intersect(pos, dirs)
         
-        v4 = np.concatenate(([-dists/c],(dirs*dists)),axis=0)
+        v4 = np.concatenate(([-dists],(dirs*dists)),axis=0)
         return (np.sqrt(np.sum(np.square(((frame.compute_lt_from_frame(self.frame) @ v4)[1:]).T), axis=1)), norms)
 
     def light_frame(self, source, dirs, dists, norms, frame, scene, bounce):
@@ -202,10 +202,10 @@ class Object:
         """
         lt = frame.compute_lt_to_frame(self.frame)
 
-        pt, dirs = lt @ source, lt_velo(lt, dirs*c)/c
+        pt, dirs = lt @ source, -lt_velo(lt, -dirs*c)/c
         time, pos = pt[0], pt[1:]
         
-        v4 = np.concatenate(([-dists/c],(dirs*dists)),axis=0)
+        v4 = np.concatenate(([-dists],(dirs*dists)),axis=0)
         dists = np.sqrt(np.sum((np.square((lt @ v4)[1:]).T), axis=1))
         
         return self.light(pt, dirs, dists, norms, scene, bounce)
