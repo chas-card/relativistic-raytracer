@@ -241,7 +241,7 @@ class Object:
         :param int bounce: number of bounces
         :return: array of colours for each pixel | shape(N,3)
         """
-        time = source[0] - dists/c
+        time = source[0] - dists
         pts = source[1:] + dirs*(dists.T)
         tol = norm(scene.light[:,np.newaxis] - pts)
         toc = norm(scene.camera.point[1:][:,np.newaxis] - pts)
