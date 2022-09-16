@@ -62,9 +62,11 @@ class Frame:
             return np.matmul(self.lt, self.ref.from_world_lt)
 
     def compute_lt_to_frame(self, frame):
+        if not frame: return self.to_world_lt
         return np.matmul(frame.from_world_lt, self.to_world_lt)
 
     def compute_lt_from_frame(self, frame):
+        if not frame: return self.from_world_lt
         return np.matmul(self.from_world_lt, frame.to_world_lt)
 
     def __str__(self):
@@ -243,8 +245,8 @@ class Object:
         """
         time = source[0] - dists
         pts = source[1:] + dirs*(dists.T)
-        tol = norm(scene.light[:,np.newaxis] - pts)
-        toc = norm(scene.camera.point[1:][:,np.newaxis] - pts)
+        tol = self.dirs_to_thing(scene.light,np.concatenate([[time],pts],axis=0))
+        toc = self.dirs_to_thing(scene.camera.point[1:],np.concatenate([[time],pts],axis=0))
         nudged = pts + norms*.0001    # default return all black
 
         #return np.array([self.diffuseColor(pts)]*len(dists))
@@ -268,9 +270,12 @@ class Object:
         color += np.outer((np.power(np.clip(phong, 0, 1), 50)),np.ones(3))
         color += np.outer((np.power(np.clip(phong, 0, 1), 50) * seelight),np.ones(3))
 
-
         return color
         #return np.full(direction.shape[1], self.diffuseColor(None))    # default return all black
+
+    def dirs_to_thing(self, thing, pos):
+        dirs = norm(thing[:,np.newaxis]-(self.frame.compute_lt_to_frame(None) @ pos)[1:])
+        return -lt_velo(self.frame.compute_lt_from_frame(None),-dirs)
 
     def __str__(self):
         return self.__class__.__name__+" at position "+str(self.position)+" with color "+str(self.diffuse)+" in frame: "+str(self.frame)
