@@ -32,4 +32,4 @@ if __name__ == '__main__':
 
     scene = W.Scene(camera, lpos, objects)
 
-    scene.render().save(fp=fp_out + f"img{int(v * 10):02d}.gif", format='PNG')
+    scene.render().save(fp=fp_out + f"img{int(v * 10):02d}_reflecc.gif", format='PNG')
