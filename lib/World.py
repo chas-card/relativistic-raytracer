@@ -214,11 +214,9 @@ class Object:
         :return:
         """
         lt = frame.compute_lt_to_frame(self.frame)
-
-        pt, dirs = lt @ source, -lt_velo(lt, -dirs * c) / c
-        time, pos = pt[0], pt[1:]
-
         v4 = np.concatenate(([-dists], (dirs * dists)), axis=0)
+        
+        pt, dirs = lt @ source, -lt_velo(lt, -dirs * c) / c
         dists = np.sqrt(np.sum(np.square((lt @ v4)[1:]).T, axis=1))
 
         return self.light(pt, dirs, dists, norms, scene, bounce)
@@ -264,21 +262,22 @@ class Object:
 
         n4d = np.concatenate(([time], nudged), axis=0)  # TODO
         distsl = [s.intersect_frame(n4d, tol, self.frame)[0] for s in scene.objs]
+        
         nearl = np.amin(distsl, axis=0)
-        seelight = distsl[scene.objs.index(self)] > 1e30
-
+        seelight = nearl > 1e30
+        print(scene.objs.index(self),distsl[scene.objs.index(self)])
         color = np.array([[.05] * 3] * len(dists))
 
         lv = np.maximum(np.einsum("ij,ij->j", norms, tol), 0.05)
         color += np.outer((lv * seelight), self.diffuseColor(pts))
-        color += np.outer(lv, self.diffuseColor(pts))
+        #color += np.outer(lv, self.diffuseColor(pts))
 
         if bounce < scene.camera.bounces:
             nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j", dirs, norms))
             color += scene.raytrace(n4d, nray, self.frame, bounce + 1) * self.mirror
 
         phong = np.einsum("ij,ij->j", norms, norm(tol + toc))
-        color += np.outer((np.power(np.clip(phong, 0, 1), 50)), np.ones(3))
+        #color += np.outer((np.power(np.clip(phong, 0, 1), 50)), np.ones(3))
         color += np.outer((np.power(np.clip(phong, 0, 1), 50) * seelight), np.ones(3))
 
         return color
