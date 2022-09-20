@@ -45,7 +45,7 @@ if __name__ == '__main__':
     frames = [(f1, [0+offset1, 120, -500], "tunnel"), (f2, [offset+offset1, 120, -500], "train")]
 
     for f0, campos, nm in frames:
-        camera = W.Camera(0, campos, camrot, 10, f0, 2)
+        camera = W.Camera(0, campos, camrot, 10, f0, 3)
 
         y = 1 / np.sqrt(1 - v ** 2)
         print(f"gamma: {y}")
@@ -66,12 +66,22 @@ if __name__ == '__main__':
         #scene.render().show()
 
         args = [(t[i], campos, f0, objects) for i in range(t.shape[0])]
-        p = Pool(processes=4)
+
+        p = Pool(processes=8)
         imgs = p.starmap(render_time, args)
 
-        # for i in tqdm(range(t.shape[0]-1)):
-        #    camera.set_time(t[i])
-        #    imgs.append(scene.render())
+        #imgs = []
+        #for i in range(t.shape[0]):
+        #    camt = t[i]
+        #    f = f0
+        #    o = objects
+        #    print(camt)
+        #    camera_t = W.Camera(camt, campos, camrot, 10, f, 2)
+        #    scene_t = W.Scene(camera_t, lpos, o)
+        #    imgs.append(scene_t.render())
+
+        p.close()
 
         imgs[0].save(fp=fp_out + f"img{'door' if doors_shown else ''}_{nm}_fs_reflecc.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
                      loop=0)
+

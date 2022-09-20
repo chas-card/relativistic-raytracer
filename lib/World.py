@@ -4,6 +4,8 @@ from array import array
 import numpy as np
 from PIL import Image
 
+from multiprocessing import Pool
+
 np_type = np.float32
 c = 8.0  # 3e8
 
@@ -184,7 +186,7 @@ class Scene:
 
 class Object:
 
-    def __init__(self, position, frame, diffuse, mirror=0.8):
+    def __init__(self, position, frame, diffuse, mirror=0.8, threads=0):
         """
 
         :param array position: array of x y z position
@@ -196,6 +198,7 @@ class Object:
         self.frame = frame
         self.diffuse = np.array(diffuse, dtype=np_type)
         self.mirror = mirror
+        self.threads = threads
 
     def intersect_frame(self, source, dirs, frame):
         """
@@ -277,7 +280,6 @@ class Object:
 
         nearl = np.amin(distsl, axis=0)
         seelight = nearl > 1e30
-        print(scene.objs.index(self), distsl[scene.objs.index(self)])
         color = np.array([[.05] * 3] * len(dists))
 
         lv = np.maximum(np.einsum("ij,ij->j", norms, tol), 0.1)
@@ -311,8 +313,9 @@ class SphereObject(Object):
 
     def intersect(self, source, direction):  # this is refactored and likely broken btw just check
         b = 2 * np.einsum("ij,ij->j", direction, source - self.position[:, np.newaxis])
-        see = np.sum(np.square(self.position)) + np.sum(np.square(source), axis=0) - 2 * np.dot(self.position, source) - (
-                self.radius ** 2)
+        see = np.sum(np.square(self.position)) + np.sum(np.square(source), axis=0) - 2 * np.dot(self.position,
+                                                                                                source) - (
+                      self.radius ** 2)
 
         disc = np.square(b) - (4 * see)
         sq = np.sqrt(np.maximum(0, disc))
@@ -338,12 +341,59 @@ class CheckeredSphereObject(SphereObject):
         return self.diffuse * checker
 
 
+def process_chunk(source, direction, meshN_chunk, v0_chunk, v1_chunk, v2_chunk):
+    intersectLens = np.einsum("at,tb->ab", meshN_chunk, direction)
+
+    intersectLens = np.where(intersectLens == 0, 1 / FARAWAY, intersectLens)
+
+    t = np.einsum("ab,ab->ab",
+                  np.einsum("abt,at->ab", (v0_chunk[:, np.newaxis, :] - source.T[np.newaxis, :, :]),
+                            meshN_chunk), np.reciprocal(intersectLens))
+    t = np.where(t < 0, FARAWAY, t)
+
+    P = source.T[np.newaxis] + np.einsum("ab,cb->cba", direction, t)
+
+    edge = (v1_chunk - v0_chunk)
+    vp = P - v0_chunk[:, np.newaxis, :]
+    if MeshObject.path1 is None:
+        path_info = np.einsum_path("ijk,uj,uvk->uvi", MeshObject.eijk, edge, vp, optimize='optimal')
+        MeshObject.path1 = path_info[0]
+        # print(path_info[1])
+    C = np.einsum("ijk,uj,uvk->uvi", MeshObject.eijk, edge, vp, optimize=MeshObject.path1)
+    if MeshObject.path2 is None:
+        path_info = np.einsum_path("ab,acb->ac", meshN_chunk, C, optimize='greedy')
+        MeshObject.path2 = path_info[0]
+        # print(path_info[1])
+    d = np.einsum("ab,acb->ac", meshN_chunk, C, optimize=MeshObject.path2)
+    t = np.where(d < 0, FARAWAY, t)
+
+    edge = (v2_chunk - v1_chunk)
+    vp = P - v1_chunk[:, np.newaxis, :]
+    C = np.einsum("ijk,uj,uvk->uvi", MeshObject.eijk, edge, vp, optimize=MeshObject.path1)
+    d = np.einsum("ab,acb->ac", meshN_chunk, C, optimize=MeshObject.path2)
+    t = np.where(d < 0, FARAWAY, t)
+
+    edge = (v0_chunk - v2_chunk)
+    vp = P - v2_chunk[:, np.newaxis, :]
+    C = np.einsum("ijk,uj,uvk->uvi", MeshObject.eijk, edge, vp, optimize=MeshObject.path1)
+    d = np.einsum("ab,acb->ac", meshN_chunk, C, optimize=MeshObject.path2)
+    t = np.where(d < 0, FARAWAY, t)
+
+    return t
+
+
 class MeshObject(Object):
-    def __init__(self, position, frame, mesh, diffuse, mirror=0.5):
-        super().__init__(position, frame, diffuse, mirror=mirror)
+    path1 = None
+    path2 = None
+    eijk = np.zeros((3, 3, 3))
+    eijk[0, 1, 2] = eijk[1, 2, 0] = eijk[2, 0, 1] = 1
+    eijk[0, 2, 1] = eijk[2, 1, 0] = eijk[1, 0, 2] = -1
+
+    def __init__(self, position, frame, mesh, diffuse, mirror=0.5, threads=0, chunk_size = 80):
+        super().__init__(position, frame, diffuse, mirror=mirror, threads=threads)
         self.m = mesh
         self.m.translate(position)
-        self.chunk_size = 200
+        self.chunk_size = chunk_size
 
     def intersect(self, source, direction):
         m = self.m
@@ -362,54 +412,20 @@ class MeshObject(Object):
         v1_chunks = np.array_split(m.v1, chunks, axis=0)
         v2_chunks = np.array_split(m.v2, chunks, axis=0)
 
-        eijk = np.zeros((3, 3, 3))
-        eijk[0, 1, 2] = eijk[1, 2, 0] = eijk[2, 0, 1] = 1
-        eijk[0, 2, 1] = eijk[2, 1, 0] = eijk[1, 0, 2] = -1
-
-        done_size = 0
-        path1 = None
-        path2 = None
-        for i in range(N):
-            curr_size = meshN_chunks[i].shape[0]
-            intersectLens = np.einsum("at,tb->ab", meshN_chunks[i], direction)
-
-            intersectLens = np.where(intersectLens == 0, 1 / FARAWAY, intersectLens)
-
-            t = np.einsum("ab,ab->ab",
-                          np.einsum("abt,at->ab", (v0_chunks[i][:, np.newaxis, :] - source.T[np.newaxis, :, :]),
-                                    meshN_chunks[i]), np.reciprocal(intersectLens))
-            t = np.where(t < 0, FARAWAY, t)
-
-            P = source.T[np.newaxis] + np.einsum("ab,cb->cba", direction, t)
-
-            edge = (v1_chunks[i] - v0_chunks[i])
-            vp = P - v0_chunks[i][:, np.newaxis, :]
-            if path1 is None:
-                path_info = np.einsum_path("ijk,uj,uvk->uvi", eijk, edge, vp, optimize='optimal')
-                path1 = path_info[0]
-                # print(path_info[1])
-            C = np.einsum("ijk,uj,uvk->uvi", eijk, edge, vp, optimize=path1)
-            if path2 is None:
-                path_info = np.einsum_path("ab,acb->ac", meshN_chunks[i], C, optimize='greedy')
-                path2 = path_info[0]
-                # print(path_info[1])
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize=path2)
-            t = np.where(d < 0, FARAWAY, t)
-
-            edge = (v2_chunks[i] - v1_chunks[i])
-            vp = P - v1_chunks[i][:, np.newaxis, :]
-            C = np.einsum("ijk,uj,uvk->uvi", eijk, edge, vp, optimize=path1)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize=path2)
-            t = np.where(d < 0, FARAWAY, t)
-
-            edge = (v0_chunks[i] - v2_chunks[i])
-            vp = P - v2_chunks[i][:, np.newaxis, :]
-            C = np.einsum("ijk,uj,uvk->uvi", eijk, edge, vp, optimize=path1)
-            d = np.einsum("ab,acb->ac", meshN_chunks[i], C, optimize=path2)
-            t = np.where(d < 0, FARAWAY, t)
-
+        ts = []
+        if self.threads == 0:
+            for i in range(N):
+                ts.append(
+                    process_chunk(source, direction, meshN_chunks[i], v0_chunks[i], v1_chunks[i], v2_chunks[i]))
+        else:
+            p = Pool(processes=self.threads)
+            ts = p.starmap(process_chunk,
+                           [(source, direction, meshN_chunks[i], v0_chunks[i], v1_chunks[i], v2_chunks[i])
+                            for i in range(N)]
+                           )
+            p.close()
+        for i, t in enumerate(ts):
             min_t = np.min(t, axis=0)
-            done_size += curr_size
             min_polygon = (t != FARAWAY) & (t == min_t[np.newaxis, :])
             b = min_polygon[:, :, np.newaxis]
             sel_n = np.sum(b * meshN_chunks[i][:, np.newaxis, :], axis=0)
