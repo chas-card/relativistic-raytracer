@@ -199,7 +199,7 @@ class Object:
         :return:
         """
         lt = frame.compute_lt_to_frame(self.frame)
-        pt, dirs = lt @ source, -lt_velo(lt, -dirs * c) / c
+        pt, dirs = lt @ source, -norm(lt_velo(lt, -dirs * c) / c)
 
         time, pos = pt[0], pt[1:]
         (dists, norms) = self.intersect(pos, dirs)
@@ -216,7 +216,7 @@ class Object:
         lt = frame.compute_lt_to_frame(self.frame)
         v4 = np.concatenate(([-dists], (dirs * dists)), axis=0)
         
-        pt, dirs = lt @ source, -lt_velo(lt, -dirs * c) / c
+        pt, dirs = lt @ source, -norm(lt_velo(lt, -dirs * c) / c)
         dists = np.sqrt(np.sum(np.square((lt @ v4)[1:]).T, axis=1))
 
         return self.light(pt, dirs, dists, norms, scene, bounce)
@@ -253,9 +253,9 @@ class Object:
         :return: array of colours for each pixel | shape(N,3)
         """
         time = source[0] - dists
-        pts = source[1:] + dirs*(dists.T)
-        tol = self.dirs_to_thing(scene.light,np.concatenate([[time],pts],axis=0))
-        toc = self.dirs_to_thing(scene.camera.point[1:],np.concatenate([[time],pts],axis=0))
+        pts = source[1:] + dirs * dists.T
+        tol = self.dirs_to_thing(scene.light,np.concatenate([[time],pts],axis=0), scene.camera.frame)
+        toc = self.dirs_to_thing(scene.camera.point[1:],np.concatenate([[time],pts],axis=0), scene.camera.frame)
         nudged = pts + norms*.0001    # default return all black
 
         # return np.array([self.diffuseColor(pts)]*len(dists))
@@ -268,9 +268,9 @@ class Object:
         print(scene.objs.index(self),distsl[scene.objs.index(self)])
         color = np.array([[.05] * 3] * len(dists))
 
-        lv = np.maximum(np.einsum("ij,ij->j", norms, tol), 0.05)
+        lv = np.maximum(np.einsum("ij,ij->j", norms, tol), 0.1)
         color += np.outer((lv * seelight), self.diffuseColor(pts))
-        #color += np.outer(lv, self.diffuseColor(pts))
+        color += np.outer(lv, self.diffuseColor(pts))
 
         if bounce < scene.camera.bounces:
             nray = norm(dirs - 2 * norms * np.einsum("ij,ij->j", dirs, norms))
@@ -283,9 +283,9 @@ class Object:
         return color
         # return np.full(direction.shape[1], self.diffuseColor(None))    # default return all black
 
-    def dirs_to_thing(self, thing, pos):
-        dirs = norm(thing[:,np.newaxis]-(self.frame.compute_lt_to_frame(None) @ pos)[1:])
-        return -lt_velo(self.frame.compute_lt_from_frame(None),-dirs)
+    def dirs_to_thing(self, thing, pos, thingframe):
+        dirs = thing[:,np.newaxis]-(self.frame.compute_lt_to_frame(thingframe) @ pos)[1:]
+        return -norm(lt_velo(self.frame.compute_lt_from_frame(thingframe),-dirs))
 
     def __str__(self):
         return self.__class__.__name__ + " at position " + str(self.position) + " with color " + str(
