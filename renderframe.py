@@ -9,7 +9,7 @@ camrot = (0, -np.pi / 7)
 lpos = np.array((3000, 10000, -3000))
 
 if __name__ == '__main__':
-    v = 0
+    v = 0.9
     numobjs = 11
     offset = 2400
 
