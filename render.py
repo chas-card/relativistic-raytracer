@@ -7,7 +7,7 @@ from multiprocessing import Pool
 # testing
 if __name__ == '__main__':
     f0=W.Frame([0,0,0])
-    f1=W.Frame([-0.009*W.c,0,0],f0)
+    f1=W.Frame([-0.02*W.c,0,0],f0)
     f3=W.Frame([-0.007*W.c,0,0],f0)
 
     cam1 = W.Camera(0,(-80,50,-100),(np.pi/12,-np.pi/6),10,f0,3, res=(640,240))

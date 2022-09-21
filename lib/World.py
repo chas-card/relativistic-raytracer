@@ -248,7 +248,7 @@ class Object:
         """
         time = source[0] - dists
         pts = source[1:] + dirs * dists.T
-        tol = self.dirs_to_thing(scene.light, np.concatenate([[time], pts], axis=0), scene.camera.frame)
+        tol = self.dirs_to_thing(scene.light, np.concatenate([[time], pts], axis=0), None)
         toc = self.dirs_to_thing(scene.camera.point[1:], np.concatenate([[time], pts], axis=0), scene.camera.frame)
         nudged = pts + norms * .0001  # default return all black
 
@@ -278,7 +278,7 @@ class Object:
 
     def dirs_to_thing(self, thing, pos, thingframe):
         dirs = thing[:, np.newaxis] - (self.frame.compute_lt_to_frame(thingframe) @ pos)[1:]
-        return -norm(lt_velo(self.frame.compute_lt_from_frame(thingframe), -dirs))
+        return norm(lt_velo(self.frame.compute_lt_from_frame(thingframe), dirs))
 
     def __str__(self):
         return self.__class__.__name__ + " at position " + str(self.position) + " with color " + str(
