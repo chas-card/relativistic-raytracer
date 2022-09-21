@@ -6,8 +6,8 @@ from PIL import Image
 
 from multiprocessing import Pool
 
-np_type = np.float32
-c = 8.0  # 3e8
+np_type = np.float64
+c = 100.0  # 3e8
 
 FARAWAY = 1.0e+39  # A large distance
 
@@ -106,8 +106,8 @@ class Camera:
         r = float(self.w) / self.h
         # Screen coordinates: x0, y0, x1, y1.
         S = 10 * np.array((-1, 1 / r, 1, -1 / r))
-        x = np.tile(np.linspace(S[0], S[2], self.w), self.h)
-        y = np.repeat(np.linspace(S[1], S[3], self.h), self.w)
+        x = np.tile(np.linspace(S[0], S[2], self.w, dtype=np_type), self.h)
+        y = np.repeat(np.linspace(S[1], S[3], self.h, dtype=np_type), self.w)
 
         sigma, theta = self.rotn
         rotmat = np.array([[1, 0, 0, 0], [0, np.cos(sigma), 0, np.sin(sigma)], [0, 0, 1, 0],
@@ -188,7 +188,7 @@ class Object:
         :return:
         """
         lt = frame.compute_lt_to_frame(self.frame)
-        pt, dirs = lt @ source, -norm(lt_velo(lt, -dirs * c) / c)
+        pt, dirs = lt @ source, -lt_velo(lt, -dirs * c) / c
 
         time, pos = pt[0], pt[1:]
         (dists, norms) = self.intersect(pos, dirs)
@@ -211,7 +211,7 @@ class Object:
         lt = frame.compute_lt_to_frame(self.frame)
         v4 = np.concatenate(([-dists], (dirs * dists)), axis=0)
 
-        pt, dirs = lt @ source, -norm(lt_velo(lt, -dirs * c) / c)
+        pt, dirs = lt @ source, -lt_velo(lt, -dirs * c) / c
         dists = np.sqrt(np.sum(np.square((lt @ v4)[1:]).T, axis=1))
 
         return self.light(pt, dirs, dists, norms, scene, bounce)
