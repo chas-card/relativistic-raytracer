@@ -21,7 +21,7 @@ if __name__ == '__main__':
     f0 = W.Frame([0, 0, 0])
     f1 = W.Frame([-v * W.c, 0, 0], f0)
 
-    camera = W.Camera(0, campos, camrot, 10, f0, 2)
+    camera = W.Camera(0, campos, camrot, 10, f0, 2, res=(640,240))
 
     objpos = (np.array([1, 0, 0], dtype=W.np_type)[:, np.newaxis] * gap * y).T
     objpos[:, 1] += -300

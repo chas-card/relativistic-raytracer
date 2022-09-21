@@ -14,7 +14,7 @@ frame_dur = 5
 
 def render_time(camt, f, o):
     print(camt)
-    camera_t = W.Camera(camt, campos, camrot, 10, f, 2)
+    camera_t = W.Camera(camt, campos, camrot, 10, f, 2, res=(640,240))
     scene_t = W.Scene(camera_t, lpos, o)
     return scene_t.render()
 
@@ -25,7 +25,7 @@ if __name__ == '__main__':
 
     f0 = W.Frame([0, 0, 0])
 
-    camera = W.Camera(0, campos, camrot, 10, f0, 2)
+    camera = W.Camera(0, campos, camrot, 10, f0, 2, res=(640,240))
 
     for v in vrange:
         numobjs = 8
@@ -55,15 +55,9 @@ if __name__ == '__main__':
 
         scene = W.Scene(camera, lpos, objects)
 
-        #scene.render().show()
-
         args = [(t[i], f0, objects) for i in range(t.shape[0])]
         p = Pool(processes=10)
         imgs = p.starmap(render_time, args)
-
-        # for i in tqdm(range(t.shape[0]-1)):
-        #    camera.set_time(t[i])
-        #    imgs.append(scene.render())
 
         imgs[0].save(fp=fp_out + f"imgg{int(v * 10):02d}.gif", format='GIF', append_images=imgs[1:], save_all=True, duration=frame_dur,
                      loop=0)

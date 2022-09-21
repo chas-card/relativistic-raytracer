@@ -18,7 +18,7 @@ doors_shown = True
 
 def render_time(camt, campos, f, o):
     print(camt)
-    camera_t = W.Camera(camt, campos, camrot, 10, f, 2)
+    camera_t = W.Camera(camt, campos, camrot, 10, f, 2, res=(640,240))
     scene_t = W.Scene(camera_t, lpos, o)
     return scene_t.render()
 
@@ -40,7 +40,7 @@ if __name__ == '__main__':
                             np.array((212.0 / 255.0, 114.0 / 255.0, 85.0 / 255.0)), mirror=0.3)]
     if (doors_shown):
         objects.append(W.MeshObject([0, dist, 0], f3, mesh.Mesh.from_file('models/doors.stl'),
-                            np.array((199.0 / 255.0, 212.0 / 255.0, 85.0 / 255.0)), mirror=0.3))
+                                    np.array((199.0 / 255.0, 212.0 / 255.0, 85.0 / 255.0)), mirror=0.3))
 
     frames = [(f1, [0+offset1, 120, -500], "tunnel"), (f2, [offset+offset1, 120, -500], "train")]
 
@@ -63,22 +63,10 @@ if __name__ == '__main__':
 
         scene = W.Scene(camera, lpos, objects)
 
-        #scene.render().show()
-
         args = [(t[i], campos, f0, objects) for i in range(t.shape[0])]
 
         p = Pool(processes=8)
         imgs = p.starmap(render_time, args)
-
-        #imgs = []
-        #for i in range(t.shape[0]):
-        #    camt = t[i]
-        #    f = f0
-        #    o = objects
-        #    print(camt)
-        #    camera_t = W.Camera(camt, campos, camrot, 10, f, 2)
-        #    scene_t = W.Scene(camera_t, lpos, o)
-        #    imgs.append(scene_t.render())
 
         p.close()
 

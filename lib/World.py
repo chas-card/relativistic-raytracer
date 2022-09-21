@@ -86,9 +86,9 @@ class Frame:
 
 # Screen class acts as the camera from which rays are projected
 class Camera:
-    def __init__(self, time, pos, rotn, dof, frame, bounces):  # rotn (x axis, y axis)
+    def __init__(self, time, pos, rotn, dof, frame, bounces, res=(640,480)):  # rotn (x axis, y axis)
         self.point = None
-        self.w, self.h = (640, 240)
+        self.w, self.h = res
         self.ray_dirs = None
         self.screen_coords = None
         self.time = time
@@ -123,26 +123,6 @@ class Camera:
     def set_time(self, t):
         self.time = t
         self.calc_rays()
-
-    # get the "eye" point in any other frame
-    # def get_point_in_frame(self, toframe):
-    #     lt = self.frame.compute_lt_to_frame(toframe)
-    #     return np.matmul(lt, self.point)
-
-    # def get_point_from_frame(self, fromframe):
-    #     lt = self.frame.compute_lt_from_frame(fromframe)
-    #     return np.matmul(lt, self.point)
-
-    # # get the coords of the screen in any other frame
-    # def get_screen_coords_in_frame(self, toframe):
-    #     lt = self.frame.compute_lt_to_frame(toframe)
-    #     return np.matmul(lt, self.screen_coords)
-
-    # # get the projected ray directions from any other frame (3D vector!)
-    # # TODO: check this (not sure whether it is ok to discard time info for the coord points)
-    # def get_ray_dirs_in_frame(self, toframe):
-    #     lt = self.frame.compute_lt_to_frame(toframe)
-    #     return lt_velo(lt, self.ray_dirs*c)/c
 
 
 class Scene:
@@ -186,7 +166,7 @@ class Scene:
 
 class Object:
 
-    def __init__(self, position, frame, diffuse, mirror=0.8, threads=0):
+    def __init__(self, position, frame, diffuse, mirror=0.8):
         """
 
         :param array position: array of x y z position
@@ -198,7 +178,6 @@ class Object:
         self.frame = frame
         self.diffuse = np.array(diffuse, dtype=np_type)
         self.mirror = mirror
-        self.threads = threads
 
     def intersect_frame(self, source, dirs, frame):
         """
@@ -330,9 +309,6 @@ class SphereObject(Object):
                      np.zeros(np.shape(direction)))
         )
 
-    # def light(self, source, dirs, dists, norms, scene, bounce):
-    # return np.full((dirs.shape[1],3), self.diffuseColor(None))    # default return all black
-
 
 class CheckeredSphereObject(SphereObject):
     def diffuseColor(self, M):
@@ -390,7 +366,8 @@ class MeshObject(Object):
     eijk[0, 2, 1] = eijk[2, 1, 0] = eijk[1, 0, 2] = -1
 
     def __init__(self, position, frame, mesh, diffuse, mirror=0.5, threads=0, chunk_size = 80):
-        super().__init__(position, frame, diffuse, mirror=mirror, threads=threads)
+        super().__init__(position, frame, diffuse, mirror=mirror)
+        self.threads = threads
         self.m = mesh
         self.m.translate(position)
         self.chunk_size = chunk_size
@@ -501,6 +478,3 @@ class MeshObject(Object):
             N_overall = np.where(tLess_bool_broadcast, N, N_overall)
 
         return t_overall, N_overall
-
-    # def light(self, source, dirs, dists, norms, scene, bounce):
-    # return np.full(dirs.shape[1], np.array([0,0,0]))    # default return all black
