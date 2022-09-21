@@ -7,7 +7,7 @@ from PIL import Image
 from multiprocessing import Pool
 
 np_type = np.float64
-c = 100.0  # 3e8
+c = 8.0  # 3e8
 
 FARAWAY = 1.0e+39  # A large distance
 
